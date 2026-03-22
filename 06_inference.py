@@ -54,16 +54,45 @@ def run_inference(audio_path, transcript, age, education, cdr, checkpoint_path):
     model.to(device)
     model.eval()
 
+    import librosa
+    import numpy as np
+    
+    # Fast lightweight loading for amplitude waveform UI
+    y, sr_ = librosa.load(audio_path, sr=16000)
+    chunk_size = max(1, len(y) // 100)
+    waveform = [float(np.max(np.abs(y[i*chunk_size:(i+1)*chunk_size]))) for i in range(100) if i*chunk_size < len(y)]
+    if len(waveform) < 100: waveform += [0.0] * (100 - len(waveform))
+    
     # 5. Forward Pass
     print("[INFO] Running Trimodal PoE Fusion...")
     with torch.no_grad():
+        egemaps_t = torch.tensor(egemaps, dtype=torch.float32).unsqueeze(0).to(device)
+        wav2vec_t = torch.tensor(wav2vec, dtype=torch.float32).unsqueeze(0).to(device)
+        whisper_t = torch.tensor(whisper_emb, dtype=torch.float32).unsqueeze(0).to(device)
+        input_ids_t = enc["input_ids"].to(device)
+        attention_mask_t = enc["attention_mask"].to(device)
+        clinical_t = clinical.to(device)
+
+        # Trimodal Component Probing (Pre-Fusion Logits)
+        acoustic_feat = model.acoustic(egemaps_t, wav2vec_t, whisper_t)
+        text_feat = model.text(input_ids_t, attention_mask_t)
+        clinical_feat = model.clinical(clinical_t)
+
+        acoustic_mu = model.fusion.acoustic_mu(acoustic_feat)
+        text_mu = model.fusion.text_mu(text_feat)
+        clinical_mu = model.fusion.clinical_mu(clinical_feat)
+
+        p_ac = torch.softmax(model.clf_head(acoustic_mu), dim=-1)[0][1].item()
+        p_text = torch.softmax(model.clf_head(text_mu), dim=-1)[0][1].item()
+        p_clin = torch.softmax(model.clf_head(clinical_mu), dim=-1)[0][1].item()
+
         clf_out, reg_out = model(
-            egemaps=torch.tensor(egemaps, dtype=torch.float32).unsqueeze(0).to(device),
-            wav2vec=torch.tensor(wav2vec, dtype=torch.float32).unsqueeze(0).to(device),
-            whisper=torch.tensor(whisper_emb, dtype=torch.float32).unsqueeze(0).to(device),
-            input_ids=enc["input_ids"].to(device),
-            attention_mask=enc["attention_mask"].to(device),
-            clinical=clinical.to(device),
+            egemaps=egemaps_t,
+            wav2vec=wav2vec_t,
+            whisper=whisper_t,
+            input_ids=input_ids_t,
+            attention_mask=attention_mask_t,
+            clinical=clinical_t,
         )
     
     # 6. Interpret Results
@@ -81,6 +110,22 @@ def run_inference(audio_path, transcript, age, education, cdr, checkpoint_path):
     print(f"AD Probability     : {probs[1].item() * 100:.2f}%")
     print(f"Predicted MMSE     : {mmse_pred:.2f} / 30.0")
     print("="*60 + "\n")
+
+    return {
+        "classification": "Dementia (AD)" if is_dementia else "Healthy Control (HC)",
+        "ad_probability": probs[1].item(),
+        "mmse_score": mmse_pred,
+        "modality_probs": {
+            "acoustic": p_ac,
+            "text": p_text,
+            "clinical": p_clin
+        },
+        "waveform": waveform,
+        "transcript": transcript,
+        "age": age,
+        "education": education,
+        "cdr": cdr
+    }
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
