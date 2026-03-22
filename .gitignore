@@ -1,0 +1,31 @@
+# Python Artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Mac OS
+.DS_Store
+
+# Virtual Environments
+venv/
+.env
+
+# Raw Datasets (Audio and Transcripts - Massive size)
+adress2020/
+taukadial/
+pitt_audio/
+pitt_audio_wav/
+pitt_transcripts/
+import_log.txt
+
+# Extracted Features and Caches
+feature_cache/
+*.parquet
+
+# Deep Learning Checkpoints & Models (>1GB)
+model_checkpoints/
+*.pt
+*.pth
+
+# Data exploration output files
+*.csv
