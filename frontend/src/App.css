@@ -472,12 +472,98 @@ input:focus, textarea:focus {
   color: var(--accent);
 }
 
-.modal-body p {
-  font-size: 0.85rem;
-  line-height: 1.6;
-  color: var(--text-muted);
-  margin: 0;
+.modal-body strong { color: var(--text-main); }
+
+/* Neural Architecture Flow */
+.full-width {
+  grid-column: 1 / -1;
 }
 
-.modal-body strong { color: var(--text-main); }
+.architecture-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  position: relative;
+  padding: 20px;
+}
+
+.arch-node {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-light);
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  position: relative;
+  z-index: 2;
+  min-width: 150px;
+  text-align: center;
+}
+
+.arch-node.audio { border-left: 3px solid #3b82f6; }
+.arch-node.text { border-left: 3px solid #a855f7; }
+.arch-node.clinical { border-left: 3px solid #10b981; }
+
+.arch-node.encoders {
+  background: rgba(59, 130, 246, 0.05);
+  font-weight: 500;
+  color: var(--text-main);
+}
+
+.arch-node.fusion {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1.5px solid var(--accent);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.glowing {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+  animation: pulse-glow 2s infinite alternate;
+}
+
+@keyframes pulse-glow {
+  0% { transform: scale(1); box-shadow: 0 0 15px rgba(59, 130, 246, 0.2); }
+  100% { transform: scale(1.03); box-shadow: 0 0 25px rgba(59, 130, 246, 0.4); }
+}
+
+.arch-line-vertical {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 2px;
+  height: 20px;
+  background: linear-gradient(to bottom, var(--accent), transparent);
+}
+
+.arch-line {
+  position: absolute;
+  top: 50%;
+  right: -25px;
+  width: 25px;
+  height: 2px;
+  background: var(--border-light);
+}
+
+/* Signal Pulse Animation */
+.arch-node::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  pointer-events: none;
+  animation: signal-pulse 3s infinite;
+}
+
+@keyframes signal-pulse {
+  0% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
+  100% { transform: translate(-50%, -50%) scale(1.4); opacity: 0; }
+}
 
