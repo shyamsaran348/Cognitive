@@ -193,19 +193,23 @@ function App() {
             <div className="modal-body">
               <div style={{background:'rgba(59,130,246,0.05)', padding:'15px', borderRadius:'8px', border:'1px solid rgba(59,130,246,0.1)', marginBottom:'10px'}}>
                  <h3 style={{marginTop:0}}>Bayesian Product of Experts (PoE)</h3>
-                 <p style={{fontSize:'0.8rem'}}>Our model implements a logarithmic summation of modality posteriors: <code>log P(y|x) = Σ λ_i log P(y|x_i)</code>. This allows the system to remain robust even if one sensor (e.g. audio) is degraded by background noise.</p>
+                 <p style={{fontSize:'0.8rem'}}>Our model implements a logarithmic summation of modality posteriors: <code>log P(y|x) = Σ λ_i log P(y|x_i)</code>. We use <strong>Confidence Weighting (λ)</strong> to ensure that if a modality (like acoustic) is noisy, the system dynamically relies more on Linguistic or Clinical evidence.</p>
               </div>
               <section>
                 <h3>1. MMSE Staging (Clinical Gold Standard)</h3>
-                <p>The Mini-Mental State Examination is a 30-point tool. Scores below 24 typically indicate cognitive impairment. Our model regresses this index using a Trimodal Product of Experts (PoE) architecture.</p>
+                <p>The Mini-Mental State Examination is a 30-point tool. Scores below 24 typically indicate cognitive impairment. Our model regresses this index using a Trimodal Product of Experts (PoE) architecture. <strong>MMSE 24+</strong> is considered healthy, while <strong>10-19</strong> indicates moderate decline.</p>
               </section>
               <section>
-                <h3>2. Acoustic Biomarkers (Prosody & Timing)</h3>
-                <p>Early-stage AD often manifests as <strong>Prosodic Flattening</strong> (reduced pitch variance) and increased <strong>Temporal Gaps</strong> (silent pauses) as patients search for vocabulary (Anomia).</p>
+                <h3>2. Acoustic eGeMAPS (88 Features)</h3>
+                <p>We extract 88-dimensional statistical acoustic vectors using the <strong>eGeMAPS standard</strong>. This includes spectral flux, jitter, and shimmer. Early-stage AD often manifests as <strong>Prosodic Flattening</strong> (reduced pitch variance) and increased <strong>Temporal Gaps</strong> (silent pauses) due to word-finding difficulties.</p>
               </section>
               <section>
-                <h3>3. Linguistic Biomarkers (Semantics)</h3>
-                <p>Using RoBERTa-large, we analyze vocabulary richness (TTR) and syntactic complexity. Cognitive decline often leads to "simplified" sentence structures and the loss of specific Information Units (IU).</p>
+                <h3>3. Semantic Encoding (RoBERTa-large)</h3>
+                <p>Using <strong>RoBERTa-large</strong> and <strong>Whisper ASR</strong>, we analyze vocabulary richness (TTR) and syntactic complexity. We look for 'Empty Speech'—sentences that are grammatically correct but lack Information Units (IU), a hallmark of linguistic fragmentation in cognitive loss.</p>
+              </section>
+              <section>
+                <h3>4. Data Foundation (TAUKADIAL & ADReSS)</h3>
+                <p>The model is trained on peer-reviewed clinical datasets including **TAUKADIAL** (2024) and **ADReSS** (2020), ensuring that the underlying diagnostic weights are grounded in validated longitudinal medical studies across multi-ethnic populations.</p>
               </section>
             </div>
           </div>
