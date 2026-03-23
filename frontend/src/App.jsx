@@ -101,8 +101,8 @@ function App() {
   };
 
   const handleAnalyze = async () => {
-    if (!file || !transcript) {
-      setError("Audio file and patient transcript are required.");
+    if (!file) {
+      setError("Audio file is required.");
       return;
     }
     
@@ -239,12 +239,12 @@ function App() {
           {(result && result.waveform) && <Waveform data={result.waveform} />}
 
           <div className="input-group">
-            <label>Transcription (Whisper Context)</label>
+            <label>Transcription (Optional: Auto-ASR if empty)</label>
             <textarea 
               rows={3} 
               value={transcript} 
               onChange={e => setTranscript(e.target.value)}
-              placeholder="Enter patient speech dynamics..."
+              placeholder="Leave empty to auto-generate transcript from audio..."
             />
           </div>
 

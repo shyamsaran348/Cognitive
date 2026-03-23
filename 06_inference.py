@@ -25,6 +25,18 @@ def run_inference(audio_path, transcript, age, education, cdr, checkpoint_path):
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     print(f"\n[INFO] Initializing Inference on {device}...")
 
+    # 0. Automatic Transcription (ASR) if transcript is missing
+    target_transcript = transcript
+    if not target_transcript or target_transcript.strip() == "":
+        print("[INFO] No transcript provided. Running Whisper ASR for automatic extraction...")
+        import whisper
+        # Use simple base/small for fast ASR, or large if preferred.
+        # We use the existing extractor's logic if possible.
+        asr_model = whisper.load_model("base", device="cpu")
+        asr_res = asr_model.transcribe(audio_path)
+        target_transcript = asr_res["text"].strip()
+        print(f"[INFO] Auto-ASR Result: \"{target_transcript}\"")
+
     # 1. Acoustic Features
     print("[INFO] Extracting Acoustic Vectors (eGeMAPS, Wav2vec, Whisper)...")
     egemaps = extractor.extract_egemaps(audio_path)
@@ -39,7 +51,7 @@ def run_inference(audio_path, transcript, age, education, cdr, checkpoint_path):
     # 2. Text Features
     print("[INFO] Tokenizing Transcript (RoBERTa)...")
     tokenizer = RobertaTokenizer.from_pretrained("roberta-large")
-    enc = tokenizer(transcript, max_length=256, padding="max_length", truncation=True, return_tensors="pt")
+    enc = tokenizer(target_transcript, max_length=256, padding="max_length", truncation=True, return_tensors="pt")
     
     # 3. Clinical Features
     clinical = torch.tensor([[age / 100.0, education / 20.0, cdr]], dtype=torch.float32)
@@ -103,7 +115,7 @@ def run_inference(audio_path, transcript, age, education, cdr, checkpoint_path):
     print("\n" + "="*60)
     print("🧠 Trimodal Cognitive Assessment Report")
     print("="*60)
-    print(f"Transcript         : \"{transcript}\"")
+    print(f"Transcript         : \"{target_transcript}\"")
     print(f"Patient Dimensions : Age {age} | Edu {education}ys | CDR {cdr}")
     print("-" * 60)
     print(f"Classification     : {'Dementia (AD)' if is_dementia else 'Healthy Control (HC)'}")
@@ -121,7 +133,7 @@ def run_inference(audio_path, transcript, age, education, cdr, checkpoint_path):
             "clinical": p_clin
         },
         "waveform": waveform,
-        "transcript": transcript,
+        "transcript": target_transcript,
         "age": age,
         "education": education,
         "cdr": cdr

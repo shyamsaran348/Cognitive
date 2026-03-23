@@ -36,7 +36,7 @@ app.add_middleware(
 @app.post("/predict")
 async def predict(
     audio: UploadFile = File(...),
-    transcript: str = Form(...),
+    transcript: str = Form(""),
     age: float = Form(65.0),
     education: float = Form(12.0),
     cdr: float = Form(0.5)
