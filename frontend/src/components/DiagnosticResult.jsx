@@ -29,20 +29,54 @@ const DiagnosticResult = ({ result, activeResults }) => {
         CogniSense Bayesian Fusion Engine • Trimodal Expert Synthesis
       </p>
 
-      {/* Active Results Banner (Phase 2 Integration) */}
+      {/* Clinical Intelligence Panel (Phase 3: True Bayesian Fusion) */}
       {activeResults && (
-        <div style={{ padding: '24px', background: 'var(--primary-light)', color: 'white', borderRadius: '16px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px', border: '1px solid rgba(255,255,255,0.2)' }}>
-           <Brain size={48} />
-           <div style={{ flex: 1 }}>
-              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800 }}>Clinical Consensus Synthesis</h3>
-              <p style={{ margin: '4px 0 0', fontSize: '0.85rem', opacity: 0.9 }}>
-                Bayesian posterior derived from passive biomarkers and prompted domain performance.
-              </p>
-           </div>
-           <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '0.7rem', opacity: 0.8, textTransform: 'uppercase' }}>Consensus Confidence</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: 900 }}>{(result.confidence * 100).toFixed(1)}%</div>
-           </div>
+        <div style={{ marginBottom: '24px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+          {/* Agreement Indicator */}
+          <div style={{ padding: '20px', background: 'var(--bg-secondary)', borderRadius: '16px', border: '1px solid var(--border-light)' }}>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px' }}>Signal Agreement</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <span style={{ fontSize: '1.5rem' }}>
+                {result.agreement === 'High' ? '✅' : result.agreement === 'Moderate' ? '⚠️' : '🚨'}
+              </span>
+              <span style={{
+                fontWeight: 800, fontSize: '1.1rem',
+                color: result.agreement === 'High' ? '#10b981' : result.agreement === 'Moderate' ? '#f59e0b' : '#ef4444'
+              }}>
+                {result.agreement || 'N/A'}
+              </span>
+            </div>
+            <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+              {result.agreement_detail || 'Awaiting active assessment data.'}
+            </p>
+          </div>
+          {/* Modality Contribution */}
+          <div style={{ padding: '20px', background: 'var(--bg-secondary)', borderRadius: '16px', border: '1px solid var(--border-light)' }}>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '12px' }}>Modality Contribution</div>
+            {[
+              { label: 'Passive Voice', pct: result.modality_contributions?.w_passive || 0.4, color: 'var(--primary)' },
+              { label: 'Active Probes', pct: result.modality_contributions?.w_active || 0.6, color: '#10b981' }
+            ].map((m, i) => (
+              <div key={i} style={{ marginBottom: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '4px' }}>
+                  <span style={{ fontWeight: 600 }}>{m.label}</span>
+                  <span style={{ fontWeight: 800 }}>{(m.pct * 100).toFixed(1)}%</span>
+                </div>
+                <div style={{ height: '6px', background: 'rgba(0,0,0,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div style={{ width: `${(m.pct * 100).toFixed(1)}%`, height: '100%', background: m.color, borderRadius: '3px' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Consensus Confidence */}
+          <div style={{ padding: '20px', background: 'var(--primary-light)', color: 'white', borderRadius: '16px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+            <div style={{ fontSize: '0.7rem', opacity: 0.8, textTransform: 'uppercase', marginBottom: '8px' }}>Consensus Confidence</div>
+            <div style={{ fontSize: '2.8rem', fontWeight: 900, lineHeight: 1 }}>{(result.confidence * 100).toFixed(1)}%</div>
+            <div style={{ fontSize: '0.65rem', opacity: 0.7, marginTop: '8px', textAlign: 'center' }}>
+              Passive: {result.passive_confidence ? (result.passive_confidence * 100).toFixed(0) : 'N/A'}% |
+              Active: {result.active_confidence ? (result.active_confidence * 100).toFixed(0) : 'N/A'}%
+            </div>
+          </div>
         </div>
       )}
 

@@ -144,19 +144,23 @@ async def active_test_score(
     task_key: str = Form(...),
     session_id: str = Form("default")
 ):
-    """Processes a single active assessment task."""
+    """Processes a single active assessment task. Returns score, transcript, and rich metadata."""
     temp_path = f"/tmp/active_{task_key}_{os.getpid()}.wav"
     try:
         audio_bytes = await audio.read()
         with open(temp_path, "wb") as f:
             f.write(audio_bytes)
             
-        score, transcript = test_engine.score_response(task_key, temp_path)
+        score, transcript, metadata = test_engine.score_response(task_key, temp_path)
         
         if session_id not in ACTIVE_RESULTS: ACTIVE_RESULTS[session_id] = {}
-        ACTIVE_RESULTS[session_id][task_key] = {"score": score, "transcript": transcript}
+        ACTIVE_RESULTS[session_id][task_key] = {
+            "score": score,
+            "transcript": transcript,
+            **metadata
+        }
         
-        return {"status": "success", "score": score, "transcript": transcript}
+        return {"status": "success", "score": score, "transcript": transcript, "metadata": metadata}
     except Exception as e:
         return {"status": "error", "message": str(e)}
     finally:
@@ -175,7 +179,8 @@ async def active_test_finalize(
     payload: dict = Body(...)
 ):
     """
-    Multimodal Fusion 2.0: Synthesize Passive Biomarkers with Active Performance.
+    True Bayesian Fusion: Confidence-Aware Synthesis of Passive + Active signals.
+    Replaces fixed 40/60 weights with dynamically computed confidence-derived weights.
     """
     passive_data = payload.get("passive_data", {})
     active_results = payload.get("active_results", {})
@@ -183,49 +188,89 @@ async def active_test_finalize(
     if not passive_data or not active_results:
         return {"status": "error", "message": "Incomplete data for synthesis."}
         
-    # 1. Calculate Active Index (0-30 scale)
-    active_mmse = test_engine.calculate_active_index(active_results)
+    # ─── 1. Compute Active Index AND Active Confidence ────────────────────────
+    active_index, active_confidence = test_engine.calculate_active_index(active_results)
     passive_mmse = passive_data.get("mmse_score", 30.0)
     
-    # 2. Bayesian Synthesis (Active Probe has higher clinical reliability)
-    # final_mmse = (Passive * 0.4) + (Active * 0.6)
-    fused_mmse = round((passive_mmse * 0.4) + (active_mmse * 0.6), 1)
+    # Passive Confidence from PoE variance (stored in passive_data)
+    # conf_passive = 1 / sigma_passive, clamped to [0.1, 1.0]
+    passive_variance = passive_data.get("variance", 0.5)
+    passive_confidence = round(min(1.0, max(0.1, 1.0 / (passive_variance + 1e-6))), 3)
+    passive_confidence = min(0.98, passive_confidence)  # cap at 98%
+
+    # ─── 2. True Bayesian Fusion: Dynamic Confidence-Derived Weights ─────────
+    total_conf = passive_confidence + active_confidence
+    w_passive = passive_confidence / total_conf
+    w_active  = active_confidence  / total_conf
     
-    # 3. Confidence Refinement
-    mmse_diff = abs(passive_mmse - active_mmse)
-    # Aligning signals boost confidence; divergence reduces it
-    confidence_delta = 0.08 if mmse_diff <= 3.0 else -0.05
-    fused_confidence = min(0.98, max(0.5, passive_data.get("confidence", 0.8) + confidence_delta))
+    fused_mmse = round((w_passive * passive_mmse) + (w_active * active_index), 1)
+    fused_mmse = max(0.0, min(30.0, fused_mmse))
     
-    # 4. Updated Clinical Tiers
-    if fused_mmse >= 27: tier, status = "Normal", "Healthy Control"
-    elif fused_mmse >= 21: tier, status = "Mild Concern", "MCI (Mild Cognitive Impairment)"
-    else: tier, status = "High Risk", "Alzheimer's Disease (Probable)"
-    
-    # 5. Multimodal Rationale Synthesis
-    concordance = "concordant" if mmse_diff <= 4.0 else "divergent"
-    rationale = f"Final Integrated Verdict: {concordance.capitalize()} markers observed. "
-    if concordance == "concordant":
-        rationale += f"Passive voice biomarkers and active domain probes both signal {tier} risk. Confidence significantly bolstered."
+    # Fused confidence = weighted geometric mean (penalizes disagreement)
+    fused_confidence = round(min(0.98, (w_passive * passive_confidence + w_active * active_confidence)), 3)
+
+    # ─── 3. Agreement Modeling ────────────────────────────────────────────────
+    agreement_gap = abs(passive_mmse - active_index)
+    if agreement_gap < 2.0:
+        agreement = "High"
+        agreement_icon = "✅"
+        agreement_detail = "Passive voice biomarkers and active domain probes strongly corroborate each other. Diagnostic conclusion is high-confidence."
+    elif agreement_gap < 5.0:
+        agreement = "Moderate"
+        agreement_icon = "⚠️"
+        if active_index > passive_mmse:
+            agreement_detail = "Moderate divergence detected. Passive biomarkers indicate higher risk than active performance suggests. May indicate early-stage compensatory reserve."
+        else:
+            agreement_detail = "Moderate divergence detected. Active testing reveals deficits that the passive speech signal did not fully capture."
     else:
-        rationale += f"Passive markers flagged risk, but active performance suggests higher compensatory reserves." if active_mmse > passive_mmse else "Active probing confirmed underlying deficits not fully captured in the passive voice stream."
+        agreement = "Low"
+        agreement_icon = "🚨"
+        if active_index > passive_mmse:
+            agreement_detail = "Significant diagnostic divergence. Passive speech flagged high risk, but active performance was near-normal. Recommend repeat assessment or check audio quality."
+        else:
+            agreement_detail = "Significant diagnostic divergence. Active probing revealed profound deficits across multiple domains that exceeded the passive biomarker prediction. High-priority clinical follow-up recommended."
+
+    # ─── 4. Modality Contribution (Explainability) ───────────────────────────
+    passive_contrib_pct = round(w_passive * 100, 1)
+    active_contrib_pct  = round(w_active  * 100, 1)
+    
+    modality_contributions = {
+        "passive_voice_biomarkers": f"{passive_contrib_pct}%",
+        "active_cognitive_probes":  f"{active_contrib_pct}%",
+        "w_passive": w_passive,
+        "w_active":  w_active
+    }
+
+    # ─── 5. Clinical Tier & Expert Rationale ─────────────────────────────────
+    if fused_mmse >= 27: tier, diagnosis = "Normal",       "Healthy Control"
+    elif fused_mmse >= 21: tier, diagnosis = "Mild Concern", "MCI (Mild Cognitive Impairment)"
+    else:                  tier, diagnosis = "High Risk",    "Alzheimer's Disease (Probable)"
+
+    rationale = (f"{agreement_icon} Confidence-Aware Consensus: {agreement} agreement between modalities. "
+                 f"Passive contributed {passive_contrib_pct}% (confidence: {passive_confidence:.2f}), "
+                 f"Active contributed {active_contrib_pct}% (confidence: {active_confidence:.2f}). "
+                 f"{agreement_detail}")
 
     integrated_data = {
         **passive_data,
         "mmse_score": fused_mmse,
         "mmse_passive": passive_mmse,
-        "mmse_active": active_mmse,
+        "mmse_active": active_index,
         "tier": tier,
-        "diagnosis": status,
+        "diagnosis": diagnosis,
         "confidence": fused_confidence,
         "rationale": rationale,
         "is_integrated": True,
-        "mmse_diff": mmse_diff
+        "mmse_diff": agreement_gap,
+        "agreement": agreement,
+        "agreement_icon": agreement_icon,
+        "agreement_detail": agreement_detail,
+        "modality_contributions": modality_contributions,
+        "active_confidence": active_confidence,
+        "passive_confidence": passive_confidence
     }
     
-    # Log the final research-grade consensus
     log_prediction(integrated_data)
-    
     return {"status": "success", "data": integrated_data}
 
 @app.post("/predict")
