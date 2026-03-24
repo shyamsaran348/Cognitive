@@ -148,10 +148,10 @@ class PoEFusion(nn.Module):
     """
     Product of Experts for trimodal fusion.
     Each expert produces (mean, log_var). PoE combines via:
-        1/var_combined = sum(1/var_i)
-        mu_combined    = var_combined * sum(mu_i / var_i)
+        1/var_combined = sum(λ_i * 1/var_i)
+        mu_combined    = var_combined * sum(λ_i * mu_i / var_i)
 
-    Falls back to concatenation if variances are degenerate.
+    Includes learnable modality weights (λ) to dynamically prioritize experts.
     """
     def __init__(self, acoustic_dim: int = 256, text_dim: int = 256,
                  clinical_dim: int = 64, latent_dim: int = 128):
@@ -166,15 +166,29 @@ class PoEFusion(nn.Module):
         self.clinical_mu = nn.Linear(clinical_dim, latent_dim)
         self.clinical_lv = nn.Linear(clinical_dim, latent_dim)
 
+        # Learnable modality weights (λ) for [Acoustic, Text, Clinical]
+        # Initialized to 1.0; using softplus ensures positivity during training
+        self.modality_weights = nn.Parameter(torch.ones(3))
+        
         self.latent_dim = latent_dim
 
     def _poe(self, means: list, logvars: list) -> Tuple[torch.Tensor, torch.Tensor]:
-        """PoE combination of multiple Gaussian experts."""
+        """PoE combination of multiple Gaussian experts with learnable weighting."""
+        # Ensure weights are positive
+        weights = F.softplus(self.modality_weights)
+        
         # precision = 1 / var = exp(-logvar)
         precisions = [torch.exp(-lv) for lv in logvars]
-        precision_sum = sum(precisions)
+        
+        # Combined precision = sum(λ_i * p_i)
+        weighted_precisions = [w * p for w, p in zip(weights, precisions)]
+        precision_sum = sum(weighted_precisions)
+        
         var_combined = 1.0 / (precision_sum + 1e-8)
-        mu_combined = var_combined * sum(p * m for p, m in zip(precisions, means))
+        
+        # Combined mean = var_combined * sum(λ_i * p_i * mu_i)
+        mu_combined = var_combined * sum(wp * m for wp, m in zip(weighted_precisions, means))
+        
         return mu_combined, torch.log(var_combined + 1e-8)
 
     def forward(self, acoustic: torch.Tensor, text: torch.Tensor,

@@ -25,18 +25,6 @@ def run_inference(audio_path, transcript, age, education, cdr, checkpoint_path):
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     print(f"\n[INFO] Initializing Inference on {device}...")
 
-    # 0. Automatic Transcription (ASR) if transcript is missing
-    target_transcript = transcript
-    if not target_transcript or target_transcript.strip() == "":
-        print("[INFO] No transcript provided. Running Whisper ASR for automatic extraction...")
-        import whisper
-        # Use simple base/small for fast ASR, or large if preferred.
-        # We use the existing extractor's logic if possible.
-        asr_model = whisper.load_model("base", device="cpu")
-        asr_res = asr_model.transcribe(audio_path)
-        target_transcript = asr_res["text"].strip()
-        print(f"[INFO] Auto-ASR Result: \"{target_transcript}\"")
-
     # 1. Acoustic Features
     print("[INFO] Extracting Acoustic Vectors (eGeMAPS, Wav2vec, Whisper)...")
     egemaps = extractor.extract_egemaps(audio_path)
@@ -45,13 +33,21 @@ def run_inference(audio_path, transcript, age, education, cdr, checkpoint_path):
     wav2vec = extractor.extract_wav2vec(audio_path)
     if wav2vec is None: wav2vec = np.zeros(768)
 
-    whisper_emb = extractor.extract_whisper(audio_path)
-    if whisper_emb is None: whisper_emb = np.zeros(1280)
-
     # 2. Text Features
     print("[INFO] Tokenizing Transcript (RoBERTa)...")
+    
+    # Optional Auto-transcribe
+    if not transcript or str(transcript).strip() == "":
+        print("[INFO] No transcript provided. Auto-transcribing with Whisper...")
+        whisper_emb, transcript = extractor.extract_whisper(audio_path, transcribe=True)
+        print(f"[INFO] Generated: \"{transcript}\"")
+    else:
+        whisper_emb, _ = extractor.extract_whisper(audio_path, transcribe=False)
+
+    if whisper_emb is None: whisper_emb = np.zeros(1280)
+
     tokenizer = RobertaTokenizer.from_pretrained("roberta-large")
-    enc = tokenizer(target_transcript, max_length=256, padding="max_length", truncation=True, return_tensors="pt")
+    enc = tokenizer(transcript, max_length=256, padding="max_length", truncation=True, return_tensors="pt")
     
     # 3. Clinical Features
     clinical = torch.tensor([[age / 100.0, education / 20.0, cdr]], dtype=torch.float32)
@@ -61,8 +57,9 @@ def run_inference(audio_path, transcript, age, education, cdr, checkpoint_path):
     model = CognitiveLossModel()
     
     # Load into CPU first to prevent RAM spikes, then send to device
+    # Use strict=False since learnable modality weights might be missing in older checkpoints
     state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-    model.load_state_dict(state_dict)
+    model.load_state_dict(state_dict, strict=False)
     model.to(device)
     model.eval()
 
@@ -115,7 +112,7 @@ def run_inference(audio_path, transcript, age, education, cdr, checkpoint_path):
     print("\n" + "="*60)
     print("🧠 Trimodal Cognitive Assessment Report")
     print("="*60)
-    print(f"Transcript         : \"{target_transcript}\"")
+    print(f"Transcript         : \"{transcript}\"")
     print(f"Patient Dimensions : Age {age} | Edu {education}ys | CDR {cdr}")
     print("-" * 60)
     print(f"Classification     : {'Dementia (AD)' if is_dementia else 'Healthy Control (HC)'}")
@@ -133,7 +130,7 @@ def run_inference(audio_path, transcript, age, education, cdr, checkpoint_path):
             "clinical": p_clin
         },
         "waveform": waveform,
-        "transcript": target_transcript,
+        "transcript": transcript,
         "age": age,
         "education": education,
         "cdr": cdr
@@ -142,7 +139,7 @@ def run_inference(audio_path, transcript, age, education, cdr, checkpoint_path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--audio", required=True, help="Path to .wav/.mp3 audio file")
-    parser.add_argument("--text", required=True, help="Transcript of the audio")
+    parser.add_argument("--text", default=None, help="Transcript (Optional: auto-transcribes if missing)")
     parser.add_argument("--age", type=float, default=65.0, help="Patient age")
     parser.add_argument("--edu", type=float, default=12.0, help="Years of education")
     parser.add_argument("--cdr", type=float, default=0.5, help="Clinical Dementia Rating")

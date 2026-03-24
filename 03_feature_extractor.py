@@ -160,10 +160,10 @@ def extract_wav2vec(audio_path: str) -> Optional[np.ndarray]:
 # Whisper large-v3 encoder
 # ---------------------------------------------------------------------------
 
-def extract_whisper(audio_path: str) -> Optional[np.ndarray]:
+def extract_whisper(audio_path: str, transcribe: bool = False) -> tuple[Optional[np.ndarray], Optional[str]]:
     """
     Run Whisper large-v3, return mean-pooled encoder embeddings (1280-dim).
-    Also returns the ASR transcript as a side-effect via whisper_transcripts dict.
+    If transcribe=True, also returns the ASR text.
     """
     global _whisper_model
     if _whisper_model is None:
@@ -176,7 +176,7 @@ def extract_whisper(audio_path: str) -> Optional[np.ndarray]:
             _whisper_model = whisper.load_model("large-v3", device="cpu")
         except Exception as e:
             print(f"[ERROR] Whisper load failed: {e}")
-            return None
+            return None, None
 
     try:
         import whisper
@@ -185,14 +185,23 @@ def extract_whisper(audio_path: str) -> Optional[np.ndarray]:
         audio = whisper.pad_or_trim(audio)
         # Whisper large-v3 specifically requires 128 mel bins.
         mel = whisper.log_mel_spectrogram(audio, n_mels=128).to(_whisper_model.device)
+        
         with torch.no_grad():
             encoder_out = _whisper_model.encoder(mel.unsqueeze(0))
+            
+            text = None
+            if transcribe:
+                # Use greedy decoding for clinical speed
+                options = whisper.DecodingOptions(fp16=False, language="en")
+                result = whisper.decode(_whisper_model, mel, options)
+                text = result.text
+
         # Mean-pool across time  →  (1280,)
         embedding = encoder_out.mean(dim=1).squeeze().cpu().numpy()
-        return embedding.astype(np.float32)
+        return embedding.astype(np.float32), text
     except Exception as e:
         print(f"[WARN] Whisper failed for {audio_path}: {e}")
-        return None
+        return None, None
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +262,7 @@ def extract_features(df: pd.DataFrame, checkpoint_name: str,
         # deadlock on macOS when transformers interacts with opensmile's threading.
         w2v = extract_wav2vec(audio) if (audio and extract_acoustic) else None
         egemaps = extract_egemaps(audio) if (audio and extract_acoustic) else None
-        whisper_emb = extract_whisper(audio) if (audio and extract_whisper_feats) else None
+        whisper_emb, _ = extract_whisper(audio) if (audio and extract_whisper_feats) else (None, None)
 
         # Hand-crafted
         hc = compute_handcrafted(

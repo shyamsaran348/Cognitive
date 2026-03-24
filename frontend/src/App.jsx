@@ -1,497 +1,260 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Upload, Activity, Brain, Server, Loader2, CheckCircle2, LineChart, Database, Info, X } from 'lucide-react';
+import { 
+  CheckCircle2, Loader2, ArrowRight, ArrowLeft, 
+  Home, Activity, Layout, Shield, Brain, User, 
+  Database, LineChart, ChevronRight, Play, Upload, Mic
+} from 'lucide-react';
 import './App.css';
 
-const MmseGauge = ({ score }) => {
-  const r = 40;
-  const c = Math.PI * r;
-  const offset = c - ((score / 30) * c);
-  return (
-    <div style={{ position: 'relative', width: '120px', height: '60px', margin: '10px auto 0' }}>
-      <svg width="120" height="60" viewBox="0 0 120 60">
-        <defs>
-          <linearGradient id="arc-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#ef4444" />
-            <stop offset="33%" stopColor="#f59e0b" />
-            <stop offset="66%" stopColor="#eab308" />
-            <stop offset="100%" stopColor="#10b981" />
-          </linearGradient>
-        </defs>
-        <path d="M 20 60 A 40 40 0 0 1 100 60" fill="none" stroke="var(--border-light)" strokeWidth="8" strokeLinecap="round" />
-        <path 
-          d="M 20 60 A 40 40 0 0 1 100 60" 
-          fill="none" 
-          stroke="url(#arc-gradient)" 
-          strokeWidth="8" 
-          strokeLinecap="round" 
-          strokeDasharray={c} 
-          strokeDashoffset={offset} 
-          style={{ transition: 'stroke-dashoffset 1.5s cubic-bezier(0.22, 1, 0.36, 1)' }} 
-        />
-      </svg>
-      <div style={{ position: 'absolute', bottom: '0', width: '100%', textAlign: 'center', fontSize: '1.4rem', fontWeight: '600' }}>
-        {score.toFixed(1)}
-      </div>
-    </div>
-  );
-};
+// Modular Components
+import WelcomeScreen from './components/WelcomeScreen';
+import PatientProfileScreen from './components/PatientProfileScreen';
+import CognitiveTasksScreen from './components/CognitiveTasksScreen';
+import IngestionPanel from './components/IngestionPanel';
+import DiagnosticResult from './components/DiagnosticResult';
+import SessionHistory from './components/SessionHistory';
+import TrainingMetrics from './components/TrainingMetrics';
+import TemporalTrend from './components/TemporalTrend';
+import ClinicalSummary from './components/ClinicalSummary';
+import ActiveAssessment from './components/ActiveAssessment';
 
-const ConfidenceRow = ({ label, prob, reverseColor=false }) => {
-  const conf = prob > 0.5 ? prob : 1 - prob;
-  const isAD = prob > 0.5;
-  const color = isAD ? (reverseColor ? 'var(--success)' : 'var(--danger)') : (reverseColor ? 'var(--danger)' : 'var(--success)');
+const FlowStepper = ({ currentStep }) => {
+  const steps = ["Orientation", "Clinical Details", "Audio Data", "Analysis"];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '10px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-        <span>{label} <span style={{fontSize:'0.7rem', opacity:0.6}}>({isAD ? 'AD' : 'HC'})</span></span>
-        <span style={{color: 'var(--text-main)', fontWeight: 500}}>{(conf * 100).toFixed(1)}%</span>
-      </div>
-      <div className="prog-bg" style={{ marginTop: '2px', height: '4px' }}>
-        <div className="prog-fill" style={{ width: `${conf * 100}%`, backgroundColor: color }} />
-      </div>
-    </div>
-  );
-};
-
-const Waveform = ({ data }) => {
-  if (!data || data.length === 0) return null;
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', height: '40px', gap: '1px', margin: '4px 0 16px', opacity: 0.8 }}>
-      {data.map((val, i) => (
-        <div 
-          key={i} 
-          style={{ 
-            flex: 1, 
-            height: `${Math.max(5, val * 100)}%`, 
-            background: 'var(--accent)', 
-            borderRadius: '2px' 
-          }} 
-        />
+    <div className="flow-stepper">
+      {steps.map((s, i) => (
+        <React.Fragment key={i}>
+          <div className={`flow-step ${i + 1 <= currentStep ? 'done' : i + 1 === currentStep + 1 ? 'active' : ''}`}>
+            <div className="step-dot">{i + 1 < currentStep ? <CheckCircle2 size={12} /> : i + 1}</div>
+            <span>{s}</span>
+          </div>
+          {i < steps.length - 1 && <div style={{ width: '40px', height: '1.5px', background: 'var(--border-light)' }} />}
+        </React.Fragment>
       ))}
     </div>
   );
 };
 
-
 function App() {
+  const [currentStep, setCurrentStep] = useState(0); // 0: Home, 1: Profile, 2: Tasks, 3: Audio, 4: Result, 5: Active Assessment
   const [file, setFile] = useState(null);
-  const [transcript, setTranscript] = useState("");
   const [age, setAge] = useState(65.0);
   const [education, setEducation] = useState(12.0);
   const [cdr, setCdr] = useState(0.5);
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [results, setResults] = useState(null); 
+  const [activeResults, setActiveResults] = useState(null); 
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState("TAUKADIAL");
-  const [showScience, setShowScience] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [mediaRecorder, setMediaRecorder] = useState(null);
+  const [liveWaveform, setLiveWaveform] = useState(Array(40).fill(0));
+  const [steps, setSteps] = useState([]); 
+  const audioContextRef = React.useRef(null);
+  const analyserRef = React.useRef(null);
+  const animationRef = React.useRef(null);
 
+  useEffect(() => {
+    fetchHistory();
+  }, [results]); 
 
-  const handleFileDrop = (e) => {
-    e.preventDefault();
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setFile(e.dataTransfer.files[0]);
+  const fetchHistory = async () => {
+    try {
+      const resp = await axios.get("http://localhost:8000/history");
+      if (resp.data.status === "success") {
+        setHistory(resp.data.history.reverse());
+      }
+    } catch (err) {
+      console.warn("History fetch failed");
+    }
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      analyserRef.current = audioContextRef.current.createAnalyser();
+      const source = audioContextRef.current.createMediaStreamSource(stream);
+      source.connect(analyserRef.current);
+      analyserRef.current.fftSize = 64;
+      const bufferLength = analyserRef.current.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      const updateWave = () => {
+        analyserRef.current.getByteFrequencyData(dataArray);
+        setLiveWaveform(Array.from(dataArray).map(v => v / 255));
+        animationRef.current = requestAnimationFrame(updateWave);
+      };
+      updateWave();
+
+      const recorder = new MediaRecorder(stream);
+      const chunks = [];
+      recorder.ondataavailable = e => chunks.push(e.data);
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'audio/wav' });
+        setFile(new File([blob], "live_record.wav", { type: 'audio/wav' }));
+        if (animationRef.current) cancelAnimationFrame(animationRef.current);
+        if (audioContextRef.current) audioContextRef.current.close();
+      };
+      recorder.start();
+      setMediaRecorder(recorder);
+      setIsRecording(true);
+      setError("");
+    } catch (err) {
+      setError("Microphone access denied.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorder) {
+      mediaRecorder.stop();
+      setIsRecording(false);
     }
   };
 
   const handleFileChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
+    if (e.target.files[0]) {
       setFile(e.target.files[0]);
+      setResults(null); 
     }
   };
 
   const handleAnalyze = async () => {
-    if (!file) {
-      setError("Audio file is required.");
-      return;
-    }
-    
-    setLoading(true);
+    if (!file) return setError("Audio input required.");
+    setIsLoading(true); 
+    setResults(null); 
     setError("");
-    
+    setSteps([
+      { id: 1, label: "Neural ASR Layer", status: 'active' },
+      { id: 2, label: "Biomarker Extraction", status: 'pending' },
+      { id: 3, label: "Bayesian PoE Fusion", status: 'pending' }
+    ]);
+
     const formData = new FormData();
     formData.append("audio", file);
-    formData.append("transcript", transcript);
     formData.append("age", age);
     formData.append("education", education);
     formData.append("cdr", cdr);
 
     try {
-      const response = await axios.post("http://localhost:8000/predict", formData, {
-        headers: { "Content-Type": "multipart/form-data" }
-      });
-      if (response.data.status === "success") {
-         setResult(response.data.data);
+      setTimeout(() => setSteps(s => s.map(x => x.id === 1 ? { ...x, status: 'done' } : x.id === 2 ? { ...x, status: 'active' } : x)), 1200);
+      setTimeout(() => setSteps(s => s.map(x => x.id === 2 ? { ...x, status: 'done' } : x.id === 3 ? { ...x, status: 'active' } : x)), 2400);
+
+      const res = await axios.post("http://localhost:8000/predict", formData);
+      if (res.data.status === "success") {
+        const data = res.data.data; 
+        setResults(data); 
+        setSteps(s => s.map(x => ({ ...x, status: 'done' })));
+
+        if (data.trigger_active_test) {
+          setCurrentStep(5); 
+        } else {
+          setCurrentStep(4); 
+        }
+        fetchHistory(); 
       } else {
-         setError(response.data.message);
+        setError(res.data.message);
       }
     } catch (err) {
-      setError("Inference server offline. Ensure FastAPI is running on port 8000.");
+      setError("Inference server offline.");
     }
-    setLoading(false);
+    setIsLoading(false); 
   };
 
-  const handleSimulate = (type) => {
-    setLoading(true);
-    setResult(null);
-    setError("");
-    
-    // Simulate realistic processing delay
-    setTimeout(() => {
-      const isAD = type === 'AD';
-      setAge(isAD ? 78.0 : 68.0);
-      setEducation(isAD ? 10.0 : 16.0);
-      setCdr(isAD ? 1.0 : 0.0);
-      setTranscript(isAD 
-        ? "The... the lady is... she's there at the water. Sink is high. Boy is... on the chair? No, stool. Cookies... falling? He is falling."
-        : "The mother is focused on the dishes while the sink overflows behind her. Meanwhile, her son is precariously reaching for a cookie jar on a wobbly stool while his sister looks on."
-      );
-      
-      const mockResult = {
-        classification: isAD ? "Dementia (AD)" : "Healthy Control (HC)",
-        ad_probability: isAD ? 0.894 : 0.122,
-        mmse_score: isAD ? 14.2 : 29.8,
-        modality_probs: {
-          acoustic: isAD ? 0.78 : 0.15,
-          text: isAD ? 0.94 : 0.08,
-          clinical: isAD ? 0.82 : 0.10
-        },
-        waveform: Array.from({length: 100}, () => Math.random() * 0.8),
-        transcript: isAD ? "Simulated AD Profile" : "Simulated HC Profile",
-        age: isAD ? 78.0 : 68.0,
-        education: isAD ? 10.0 : 16.0,
-        cdr: isAD ? 1.0 : 0.0
-      };
-      
-      setResult(mockResult);
-      setLoading(false);
-    }, 1500);
-  };
+  const handleBack = () => setCurrentStep(prev => Math.max(0, prev - 1));
+  const handleNext = () => setCurrentStep(prev => Math.min(5, prev + 1)); 
 
   return (
-    <div className="dashboard-wrapper">
-      
-      <header className="header">
-        <Brain color="white" size={24} />
-        <h1>Cognitive Inference Engine</h1>
-        <div className="header-badge">Live Tensors</div>
-        <button className="info-btn" onClick={() => setShowScience(true)} title="Scientific Evidence">
-          <Info size={18} />
-        </button>
-      </header>
-
-      {showScience && (
-        <div className="modal-overlay" onClick={() => setShowScience(false)}>
-          <div className="modal-content" style={{maxWidth:'650px'}} onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
-                <Brain size={20} color="var(--accent)" />
-                <h2 style={{margin:0, fontSize:'1.1rem'}}>Scientific & Model Architecture</h2>
-              </div>
-              <X className="close-icon" onClick={() => setShowScience(false)} />
-            </div>
-            <div className="modal-body">
-              <div style={{background:'rgba(59,130,246,0.05)', padding:'15px', borderRadius:'8px', border:'1px solid rgba(59,130,246,0.1)', marginBottom:'10px'}}>
-                 <h3 style={{marginTop:0}}>Bayesian Product of Experts (PoE)</h3>
-                 <p style={{fontSize:'0.8rem'}}>Our model implements a logarithmic summation of modality posteriors: <code>log P(y|x) = Σ λ_i log P(y|x_i)</code>. We use <strong>Confidence Weighting (λ)</strong> to ensure that if a modality (like acoustic) is noisy, the system dynamically relies more on Linguistic or Clinical evidence.</p>
-              </div>
-              <section>
-                <h3>1. MMSE Staging (Clinical Gold Standard)</h3>
-                <p>The Mini-Mental State Examination is a 30-point tool. Scores below 24 typically indicate cognitive impairment. Our model regresses this index using a Trimodal Product of Experts (PoE) architecture. <strong>MMSE 24+</strong> is considered healthy, while <strong>10-19</strong> indicates moderate decline.</p>
-              </section>
-              <section>
-                <h3>2. Acoustic eGeMAPS (88 Features)</h3>
-                <p>We extract 88-dimensional statistical acoustic vectors using the <strong>eGeMAPS standard</strong>. This includes spectral flux, jitter, and shimmer. Early-stage AD often manifests as <strong>Prosodic Flattening</strong> (reduced pitch variance) and increased <strong>Temporal Gaps</strong> (silent pauses) due to word-finding difficulties.</p>
-              </section>
-              <section>
-                <h3>3. Semantic Encoding (RoBERTa-large)</h3>
-                <p>Using <strong>RoBERTa-large</strong> and <strong>Whisper ASR</strong>, we analyze vocabulary richness (TTR) and syntactic complexity. We look for 'Empty Speech'—sentences that are grammatically correct but lack Information Units (IU), a hallmark of linguistic fragmentation in cognitive loss.</p>
-              </section>
-              <section>
-                <h3>4. Data Foundation (TAUKADIAL & ADReSS)</h3>
-                <p>The model is trained on peer-reviewed clinical datasets including **TAUKADIAL** (2024) and **ADReSS** (2020), ensuring that the underlying diagnostic weights are grounded in validated longitudinal medical studies across multi-ethnic populations.</p>
-              </section>
-            </div>
-          </div>
+    <div className="clinical-app">
+      <nav className="navbar">
+        <div className="brand" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Brain size={28} color="var(--primary)" />
+          <span style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--primary)', letterSpacing: '-0.03em' }}>Cogni<span style={{ color: 'var(--primary-light)' }}>Sense</span></span>
         </div>
-      )}
-
-      {/* Panels 1 and 2: Input and Live Assessment */}
-      <div className="grid-layout">
-        <div className="panel">
-          <div className="panel-title">
-            <Server size={14} /> Panel 1: Data Ingestion
-          </div>
-
-          <label 
-            className={`upload-zone ${file ? 'active' : ''}`}
-            onDragOver={e => e.preventDefault()}
-            onDrop={handleFileDrop}
-          >
-            {file ? <CheckCircle2 size={28} color="var(--accent)" /> : <Upload size={28} className="upload-icon" />}
-            <div style={{fontWeight: 500, color: file ? 'var(--text-main)' : 'var(--text-muted)', fontSize: '0.9rem'}}>
-              {file ? file.name : "Drag & drop patient .WAV audio"}
-            </div>
-            {!file && <span style={{fontSize: '0.75rem', color: 'var(--text-muted)'}}>or click to browse local files</span>}
-            <input type="file" accept=".wav,.mp3" hidden onChange={handleFileChange} />
-          </label>
-
-          {(result && result.waveform) && <Waveform data={result.waveform} />}
-
-          <div className="input-group">
-            <label>Transcription (Optional: Auto-ASR if empty)</label>
-            <textarea 
-              rows={3} 
-              value={transcript} 
-              onChange={e => setTranscript(e.target.value)}
-              placeholder="Leave empty to auto-generate transcript from audio..."
-            />
-          </div>
-
-          <div className="row-3">
-            <div className="input-group">
-              <label>Age</label>
-              <input type="number" value={age} onChange={e => setAge(parseFloat(e.target.value))} />
-            </div>
-            <div className="input-group">
-              <label>Education</label>
-              <input type="number" value={education} onChange={e => setEducation(parseFloat(e.target.value))} />
-            </div>
-            <div className="input-group">
-              <label>CDR Default</label>
-              <input type="number" step="0.5" value={cdr} onChange={e => setCdr(parseFloat(e.target.value))} />
-            </div>
-          </div>
-
-          {error && <div className="error-banner">{error}</div>}
-
-          <button className="btn-primary" onClick={handleAnalyze} disabled={loading}>
-            {loading ? <Loader2 className="spinner" size={18} /> : <Activity size={18} />}
-            {loading ? "Processing Modalities..." : "Execute Trimodal PoE Fusion"}
+        <div className="nav-links">
+          <a className={currentStep === 0 ? 'active' : ''} onClick={() => setCurrentStep(0)}>Home</a>
+          <a className={currentStep > 0 && currentStep < 4 ? 'active' : ''} onClick={() => setCurrentStep(1)}>Assessment</a>
+          <a onClick={() => setCurrentStep(2)}>Test Hub</a>
+        </div>
+        <div className="nav-actions">
+          <button className="btn-primary" onClick={() => setCurrentStep(1)}>
+            Begin Assessment <ArrowRight size={16} />
           </button>
-
-          <div style={{ display: 'flex', gap: '8px', marginTop: '10px', justifyContent: 'center' }}>
-            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', alignSelf: 'center' }}>Quick Demos:</span>
-            <button className="badge-btn" onClick={() => handleSimulate('HC')} disabled={loading}>Healthy Patient</button>
-            <button className="badge-btn" style={{ borderColor: 'rgba(239, 68, 68, 0.3)', color: 'var(--danger)' }} onClick={() => handleSimulate('AD')} disabled={loading}>AD Patient</button>
-          </div>
         </div>
+      </nav>
 
-        <div className="panel">
-          <div className="panel-title" style={{marginBottom: 0}}>
-            <Activity size={14} /> Panel 2 & 3: Inference & Modalities
+      <main>
+        {currentStep === 0 && (
+          <div className="container">
+            <WelcomeScreen onStart={() => setCurrentStep(1)} />
+            <ClinicalSummary history={history} />
           </div>
+        )}
 
-          {!result && !loading && (
-            <div className="results-empty">
-              <Activity size={40} />
-              <div style={{fontSize: '0.9rem'}}>Awaiting pipeline execution.<br/>Load data to generate inference.</div>
-            </div>
-          )}
+        {currentStep > 0 && currentStep < 4 && (
+          <div className="container animate-slide-up" style={{ maxWidth: '1000px' }}>
+             <FlowStepper currentStep={currentStep} />
+             
+             {currentStep === 1 && (
+               <PatientProfileScreen 
+                 age={age} setAge={setAge} 
+                 education={education} setEducation={setEducation}
+                 cdr={cdr} setCdr={setCdr}
+                 onNext={handleNext} onBack={() => setCurrentStep(0)}
+               />
+             )}
 
-          {loading && (
-            <div className="results-empty">
-              <Loader2 className="spinner" size={40} color="var(--accent)" />
-              <div style={{color: 'var(--text-main)', fontWeight: 500, fontSize: '0.9rem'}}>Extracting Acoustic Covariates...</div>
-            </div>
-          )}
+             {currentStep === 2 && (
+               <CognitiveTasksScreen onNext={handleNext} onBack={handleBack} />
+             )}
 
-          {result && !loading && (
-            <div style={{display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '4px', animation: 'fadeUp 0.6s ease'}}>
-              
-              <div className="metric" style={{borderColor: result.ad_probability > 0.5 ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.2)'}}>
-                <div className="metric-header">
-                  Clinical Diagnosis
-                  {result.ad_probability > 0.5 ? <div className="header-badge" style={{color: 'var(--danger)', background: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.2)'}}>Alert</div> : null}
-                </div>
-                <div className={`metric-val ${result.ad_probability > 0.5 ? 'text-danger' : 'text-success'}`} style={{textAlign: 'center', padding: '10px 0'}}>
-                  {result.classification}
-                </div>
-              </div>
-
-              <div className="metric">
-                <div className="metric-header" style={{borderBottom: '1px solid var(--border-light)', paddingBottom: '10px', marginBottom: '4px'}}>
-                  Modality Independent Contributions
-                </div>
-                {result.modality_probs && (
-                  <>
-                    <ConfidenceRow label="Acoustic Stream" prob={result.modality_probs.acoustic} />
-                    <ConfidenceRow label="Linguistic Stream" prob={result.modality_probs.text} />
-                    <ConfidenceRow label="Clinical Covariates" prob={result.modality_probs.clinical} />
-                    <div style={{height: '1px', background: 'var(--border-light)', margin: '14px 0 8px'}} />
-                  </>
-                )}
-                <ConfidenceRow label="Trimodal PoE Fusion" prob={result.ad_probability} />
-              </div>
-
-              <div className="metric">
-                <div className="metric-header" style={{borderBottom: '1px solid var(--border-light)', paddingBottom: '10px'}}>
-                  Regressed MMSE Index
-                </div>
-                <MmseGauge score={result.mmse_score} />
-              </div>
-
-              <div className="metric" style={{ background: 'rgba(59, 130, 246, 0.03)', borderStyle: 'dashed' }}>
-                <div className="metric-header" style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Clinical Interpretation
-                </div>
-                <div style={{ fontSize: '0.8rem', lineHeight: '1.4', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  {result.ad_probability > 0.5 
-                    ? `Patient exhibits significant ${result.modality_probs.text > 0.8 ? 'linguistic fragmentation' : 'acoustic markers'} consistent with early-stage Dementia. MMSE index (${result.mmse_score.toFixed(1)}) warrants immediate clinical follow-up.`
-                    : `Cognitive profiles are within normal variance. Trimodal fusion indicates high stability across linguistic and acoustic streams.`
-                  }
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Panels 4 and 5: Training Results & Dataset Explorer */}
-      <div className="grid-layout">
-        <div className="panel">
-          <div className="panel-title">
-            <LineChart size={14} /> Panel 4: Training Results
+             {currentStep === 3 && (
+               <IngestionPanel 
+                 file={file} handleFileChange={handleFileChange} 
+                 isRecording={isRecording} startRecording={startRecording} stopRecording={stopRecording}
+                 liveWaveform={liveWaveform} result={results} 
+                 loading={isLoading} steps={steps} 
+                 handleAnalyze={handleAnalyze} hideMetadata={true}
+                 onBack={handleBack}
+               />
+             )}
           </div>
-          
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '4px' }}>
-            <button className={`badge-btn ${activeTab === 'TAUKADIAL' ? 'active' : ''}`} onClick={() => setActiveTab('TAUKADIAL')}>TAUKADIAL</button>
-            <button className={`badge-btn ${activeTab === 'ADReSS' ? 'active' : ''}`} onClick={() => setActiveTab('ADReSS')}>ADReSS</button>
+        )}
+
+        {currentStep === 4 && (
+          <div className="container animate-slide-up" style={{ maxWidth: '1200px' }}>
+             <DiagnosticResult result={results} activeResults={activeResults} />
+             <div style={{ marginTop: '40px', display: 'flex', justifyContent: 'center' }}>
+                <button className="btn-outline" onClick={() => setCurrentStep(0)}>Return to Dashboard</button>
+             </div>
           </div>
+        )}
 
-          {activeTab === 'TAUKADIAL' ? (
-            <table className="benchmark-table">
-              <thead>
-                <tr><th>Fold</th><th>AUC</th><th>F1</th><th>RMSE</th></tr>
-              </thead>
-              <tbody>
-                <tr><td>Fold 1</td><td>0.892</td><td>0.884</td><td>4.12</td></tr>
-                <tr><td>Fold 2</td><td>0.915</td><td>0.902</td><td>3.85</td></tr>
-                <tr><td>Fold 3</td><td>0.887</td><td>0.865</td><td>4.33</td></tr>
-                <tr><td>Fold 4</td><td>0.920</td><td>0.911</td><td>3.70</td></tr>
-                <tr><td>Fold 5</td><td>0.908</td><td>0.895</td><td>3.91</td></tr>
-                <tr className="highlight"><td>Mean ± Std</td><td>0.904 ± .01</td><td>0.891 ± .02</td><td>3.98 ± .2</td></tr>
-              </tbody>
-            </table>
-          ) : (
-            <table className="benchmark-table">
-              <thead>
-                <tr><th>Fold</th><th>AUC</th><th>F1</th><th>RMSE</th></tr>
-              </thead>
-              <tbody>
-                <tr><td>Fold 1</td><td>0.841</td><td>0.838</td><td>4.75</td></tr>
-                <tr><td>Fold 2</td><td>0.865</td><td>0.852</td><td>4.50</td></tr>
-                <tr><td>Fold 3</td><td>0.850</td><td>0.844</td><td>4.62</td></tr>
-                <tr><td>Fold 4</td><td>0.873</td><td>0.869</td><td>4.21</td></tr>
-                <tr><td>Fold 5</td><td>0.859</td><td>0.851</td><td>4.44</td></tr>
-                <tr className="highlight"><td>Mean ± Std</td><td>0.857 ± .01</td><td>0.850 ± .01</td><td>4.50 ± .1</td></tr>
-              </tbody>
-            </table>
-          )}
-
-          <div className="benchmark-bars" style={{ marginTop: '16px' }}>
-            <div className="benchmark-row">
-              <span className="btitle" style={{fontSize: '0.75rem'}}>CogniVoice (2022)</span>
-              <div className="bbar"><div style={{width:'84.1%', background:'var(--text-muted)'}}/></div>
-              <span style={{fontSize: '0.75rem'}}>84.1%</span>
-            </div>
-            <div className="benchmark-row">
-              <span className="btitle" style={{fontSize: '0.75rem'}}>Bang et al. (2023)</span>
-              <div className="bbar"><div style={{width:'87.3%', background:'var(--text-muted)'}}/></div>
-              <span style={{fontSize: '0.75rem'}}>87.3%</span>
-            </div>
-            <div className="benchmark-row">
-              <span className="btitle" style={{fontSize: '0.75rem'}}>Trimodal PoE (Ours)</span>
-              <div className="bbar"><div style={{width:'90.4%', background:'var(--accent)'}}/></div>
-              <span style={{color:'var(--accent)', fontWeight:600, fontSize: '0.75rem'}}>90.4%</span>
-            </div>
+        {currentStep === 5 && (
+          <div className="container" style={{ maxWidth: '1000px' }}>
+             <ActiveAssessment onComplete={async (activeData) => {
+               setActiveResults(activeData);
+               try {
+                 const res = await axios.post("http://localhost:8000/active_test/finalize", {
+                   passive_data: results,
+                   active_results: activeData
+                 });
+                 if (res.data.status === 'success') {
+                   setResults(res.data.data); // Update with fused data
+                 }
+               } catch (err) {
+                 console.error("Final synthesis failed:", err);
+               }
+               setCurrentStep(4);
+             }} />
           </div>
-        </div>
+        )}
+      </main>
 
-        <div className="panel">
-          <div className="panel-title">
-            <Database size={14} /> Panel 5: Dataset Explorer
-          </div>
-
-          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'20px'}}>
-            <div className="dataset-stat">
-              <div className="dtitle">Total Patients</div>
-              <div className="dval">{activeTab === 'TAUKADIAL' ? '507' : '156'} <span style={{fontSize:'0.75rem', color:'var(--text-muted)'}}>{activeTab}</span></div>
-            </div>
-            <div className="dataset-stat">
-              <div className="dtitle">Age Range</div>
-              <div className="dval">{activeTab === 'TAUKADIAL' ? '55 - 90' : '53 - 79'} <span style={{fontSize:'0.75rem', color:'var(--text-muted)'}}>Years</span></div>
-            </div>
-          </div>
-
-          <div style={{marginTop:'24px'}}>
-            <div className="panel-title" style={{marginBottom:'16px', color:'var(--text-main)'}}>MMSE Clinical Distribution (AD vs HC)</div>
-            <div className="histogram">
-              {[38, 45, 60, 50, 42, 20, 10, 5, 2, 0].map((h1, i) => {
-                const h2 = [0, 5, 10, 25, 40, 55, 75, 85, 60, 45][i];
-                return (
-                  <div key={i} className="hist-col">
-                    <div className="hist-ad" style={{height: `${h1}%`}} />
-                    <div className="hist-hc" style={{height: `${h2}%`}} />
-                    <span className="hist-label">{i*3}</span>
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{display:'flex', gap:'15px', justifyContent:'center', marginTop:'30px', fontSize:'0.75rem', color:'var(--text-muted)'}}>
-              <div style={{display:'flex', alignItems:'center', gap:'6px'}}><div style={{width:'10px', height:'10px', background:'var(--danger)', borderRadius:'2px'}}/> Alzheimer's Disease (AD)</div>
-              <div style={{display:'flex', alignItems:'center', gap:'6px'}}><div style={{width:'10px', height:'10px', background:'var(--success)', borderRadius:'2px'}}/> Healthy Control (HC)</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="panel full-width">
-        <div className="panel-title"><Brain size={14} /> Panel 6: Neural Architecture Flow & Training Performance</div>
-        
-        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'40px', marginTop:'10px'}}>
-          
-          {/* Architecture Flow */}
-          <div className="architecture-container">
-            <div className="arch-node audio">Audio (Wav) <div className="arch-line" /></div>
-            <div className="arch-node text">Text (Whisper) <div className="arch-line" /></div>
-            <div className="arch-node clinical">Clinical (Meta) <div className="arch-line" /></div>
-            
-            <div className="arch-node encoders">Encoders (W2V/RoBERTa/MLP) <div className="arch-line-vertical" /></div>
-            
-            <div className="arch-node fusion glowing">Bayesian PoE Fusion <div className="arch-line-vertical" /></div>
-            
-            <div className="arch-node output">Diagnostic Result (AD/HC)</div>
-          </div>
-
-          {/* Training Benchmarks */}
-          <div style={{display:'flex', flexDirection:'column', gap:'15px'}}>
-            <div className="metric" style={{background:'rgba(255,255,255,0.02)'}}>
-              <div className="metric-header" style={{fontSize:'0.7rem'}}>K-Fold Cross-Validation Progress (Fold 5/5)</div>
-              <div style={{display:'flex', alignItems:'flex-end', height:'60px', gap:'4px', marginTop:'10px'}}>
-                 {[0.6, 0.72, 0.81, 0.88, 0.92, 0.904].map((v, i) => (
-                   <div key={i} style={{flex:1, height:`${v*100}%`, background:i===5?'var(--accent)':'var(--text-muted)', borderRadius:'2px', opacity:0.6 + (i*0.08)}} />
-                 ))}
-              </div>
-              <div style={{display:'flex', justifyContent:'space-between', fontSize:'0.65rem', color:'var(--text-muted)', marginTop:'6px'}}>
-                 <span>Epoch 0</span><span>Best Accuracy (90.4%)</span>
-              </div>
-            </div>
-            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px'}}>
-              <div className="dataset-stat" style={{padding:'10px'}}>
-                <div className="dtitle">Train Loss</div>
-                <div className="dval" style={{fontSize:'1.1rem'}}>0.042 <span style={{fontSize:'0.6rem', color:'var(--success)'}}>↓ Stable</span></div>
-              </div>
-              <div className="dataset-stat" style={{padding:'10px'}}>
-                <div className="dtitle">Validation AUC</div>
-                <div className="dval" style={{fontSize:'1.1rem'}}>0.915 <span style={{fontSize:'0.6rem', color:'var(--success)'}}>↑ Peak</span></div>
-              </div>
-            </div>
-          </div>
-
-        </div>
-      </div>
-
+      <footer className="webflow-footer" style={{ borderTop: '1px solid var(--border-light)', marginTop: '80px', background: 'var(--white)' }}>
+        CogniSense v2.45 Clinical Intelligence • {new Date().getFullYear()} • Restricted to Certified Practitioners
+      </footer>
     </div>
   );
 }

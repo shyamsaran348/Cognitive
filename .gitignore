@@ -29,3 +29,13 @@ model_checkpoints/
 
 # Data exploration output files
 *.csv
+*.json
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+.env.local
+
+# Temporary Audio Artifacts (Patient Recordings)
+*.wav
+/tmp/active_*
