@@ -143,16 +143,17 @@ ACTIVE_RESULTS = {} # Session memory for domain scores
 async def active_test_score(
     audio: UploadFile = File(...),
     task_key: str = Form(...),
+    test_type: str = Form("cogni"),
     session_id: str = Form("default")
 ):
-    """Processes a single active assessment task. Returns score, transcript, and rich metadata."""
+    """Processes a single active assessment task. Supports cogni / ace3 / moca test types."""
     temp_path = f"/tmp/active_{task_key}_{os.getpid()}.wav"
     try:
         audio_bytes = await audio.read()
         with open(temp_path, "wb") as f:
             f.write(audio_bytes)
             
-        score, transcript, metadata = test_engine.score_response(task_key, temp_path)
+        score, transcript, metadata = test_engine.score_response(task_key, temp_path, test_type=test_type)
         
         if session_id not in ACTIVE_RESULTS: ACTIVE_RESULTS[session_id] = {}
         ACTIVE_RESULTS[session_id][task_key] = {
@@ -168,9 +169,9 @@ async def active_test_score(
         if os.path.exists(temp_path): os.remove(temp_path)
 
 @app.get("/active_test/prompt")
-async def active_test_prompt(index: int = 0):
-    """Fetches the next prompt for the active test flow."""
-    prompt = test_engine.get_next_prompt(index)
+async def active_test_prompt(index: int = 0, test_type: str = "cogni"):
+    """Fetches the next prompt for the active test flow (supports cogni / ace3 / moca)."""
+    prompt = test_engine.get_next_prompt(index, test_type=test_type)
     if prompt:
         return {"status": "success", "data": prompt}
     return {"status": "complete", "message": "All domains assessed."}

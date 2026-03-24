@@ -1,7 +1,7 @@
 import React from 'react';
-import { Brain, FileText, Layout, ArrowRight, ArrowLeft, Mic, ChevronRight } from 'lucide-react';
+import { FileText, Layout, ArrowLeft, Mic, ChevronRight } from 'lucide-react';
 
-const CognitiveTasksScreen = ({ onNext, onBack }) => {
+const CognitiveTasksScreen = ({ onSelectTest, onBack }) => {
   const tests = [
     {
       id: 'voice',
@@ -15,20 +15,20 @@ const CognitiveTasksScreen = ({ onNext, onBack }) => {
     {
       id: 'ace3',
       title: 'ACE-III',
-      subtitle: 'Addenbrooke’s Cognitive Examination III',
-      desc: 'Digitised ACE-III covering attention, memory, verbal fluency, language, and visuospatial abilities.',
-      status: 'Coming Soon',
-      active: false,
-      tags: ['Attention', 'Memory', 'Fluency']
+      subtitle: "Addenbrooke\u2019s Cognitive Examination III",
+      desc: 'Digitised ACE-III: 10 voice-driven tasks covering Attention, Memory, Verbal Fluency, Language, and Visuospatial domains.',
+      status: 'Live',
+      active: true,
+      tags: ['Attention', 'Memory', 'Fluency', 'Language', 'Visuospatial']
     },
     {
       id: 'moca',
       title: 'MoCA',
       subtitle: 'Montreal Cognitive Assessment',
-      desc: 'Digital MoCA screening — especially sensitive for early-stage MCI. Supports Indian language variants.',
-      status: 'Coming Soon',
-      active: false,
-      tags: ['Orientation', 'Recall', 'Attention']
+      desc: 'Digital MoCA: 13 tasks sensitive for early-stage MCI. Includes Trail Making, Abstraction, and Delayed Recall.',
+      status: 'Live',
+      active: true,
+      tags: ['Orientation', 'Recall', 'Attention', 'Executive', 'Language']
     }
   ];
 
@@ -38,35 +38,30 @@ const CognitiveTasksScreen = ({ onNext, onBack }) => {
         <div className="badge-green" style={{ marginBottom: '16px' }}>Assessment Suite</div>
         <h2 style={{ fontSize: '3rem', margin: '0 0 20px' }}>Cognitive Test Hub</h2>
         <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem', maxWidth: '800px' }}>
-          CogniSense will expand to include digitised versions of standardised cognitive tests. Each test result feeds into the final diagnostic fusion alongside the voice analysis.
+          Three complementary voice-driven assessment pathways — each feeds into the final diagnostic fusion alongside your voice analysis.
         </p>
       </div>
 
       <div className="test-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
         {tests.map(test => (
-          <div 
-            key={test.id} 
-            className={`panel-white test-card ${test.active ? 'active' : 'disabled'}`}
-            style={{ 
-              display: 'flex', 
-              flexDirection: 'column', 
-              gap: '16px', 
-              cursor: test.active ? 'pointer' : 'default',
-              opacity: test.active ? 1 : 0.6
+          <div
+            key={test.id}
+            className="panel-white"
+            style={{
+              display: 'flex', flexDirection: 'column', gap: '16px',
+              cursor: 'pointer', transition: 'transform 0.2s, box-shadow 0.2s'
             }}
-            onClick={test.active ? onNext : null}
+            onClick={() => onSelectTest(test.id)}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.08)'; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = ''; }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-               <div className="stream-icon" style={{ background: test.active ? 'var(--accent)' : 'var(--bg-secondary)' }}>
-                 {test.id === 'voice' ? <Mic size={20} /> : test.id === 'ace3' ? <FileText size={20} /> : <Layout size={20} />}
-               </div>
-               <div className={`badge ${test.active ? 'badge-live' : 'badge-soon'}`} style={{ 
-                 fontSize: '0.6rem', padding: '4px 8px', borderRadius: '4px', fontWeight: 800,
-                 background: test.active ? '#dcfce7' : '#f1f5f9',
-                 color: test.active ? '#166534' : '#64748b'
-               }}>
-                 {test.status}
-               </div>
+              <div className="stream-icon" style={{ background: 'var(--accent)' }}>
+                {test.id === 'voice' ? <Mic size={20} /> : test.id === 'ace3' ? <FileText size={20} /> : <Layout size={20} />}
+              </div>
+              <div style={{ fontSize: '0.6rem', padding: '4px 8px', borderRadius: '4px', fontWeight: 800, background: '#dcfce7', color: '#166534' }}>
+                {test.status}
+              </div>
             </div>
 
             <div>
@@ -79,16 +74,14 @@ const CognitiveTasksScreen = ({ onNext, onBack }) => {
             </p>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-               {test.tags.map(tag => (
-                 <span key={tag} style={{ fontSize: '0.65rem', padding: '2px 8px', background: 'var(--bg-secondary)', borderRadius: '4px', color: 'var(--text-muted)' }}>{tag}</span>
-               ))}
+              {test.tags.map(tag => (
+                <span key={tag} style={{ fontSize: '0.65rem', padding: '2px 8px', background: 'var(--bg-secondary)', borderRadius: '4px', color: 'var(--text-muted)' }}>{tag}</span>
+              ))}
             </div>
 
-            {test.active && (
-              <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)', fontWeight: 700, fontSize: '0.9rem' }}>
-                Open Assessment <ChevronRight size={16} />
-              </div>
-            )}
+            <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)', fontWeight: 700, fontSize: '0.9rem' }}>
+              Open Assessment <ChevronRight size={16} />
+            </div>
           </div>
         ))}
       </div>
