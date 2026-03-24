@@ -14,6 +14,7 @@ from fastapi import FastAPI, UploadFile, File, Form, Body
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import torch
+import numpy as np
 from pydub import AudioSegment
 import io
 
@@ -313,57 +314,95 @@ async def predict(
             with open(normalized_path, "wb") as f:
                 f.write(audio_bytes)
 
-        # 1. Adaptive PoE Weights Calculation (Reliability Scaling)
+        # ─── Real PoE Model Inference ─────────────────────────────────────────
+        checkpoint_path = "model_checkpoints/taukadial_fold5_best.pt"
+        
+        try:
+            if not os.path.exists(checkpoint_path):
+                raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+            
+            print(f"[API] Running real PoE inference on {normalized_path}")
+            inference_result = run_inference(
+                audio_path    = normalized_path,
+                transcript    = None,   # Auto-transcribes via Whisper
+                age           = age,
+                education     = education,
+                cdr           = cdr,
+                checkpoint_path = checkpoint_path
+            )
+            
+            mmse_score    = float(np.clip(inference_result["mmse_score"], 0.0, 30.0))
+            classification = inference_result["classification"]
+            ad_probability = inference_result["ad_probability"]
+            waveform      = inference_result.get("waveform", [])
+            transcript    = inference_result.get("transcript", "")
+            modality_probs = inference_result.get("modality_probs", {})
+            
+            # Confidence from modality variance (PoE uncertainty proxy)
+            p_vals = list(modality_probs.values())
+            variance = float(np.var(p_vals)) if p_vals else 0.5
+            confidence = round(float(np.clip(1.0 - variance * 5.0, 0.5, 0.98)), 3)
+            
+            is_real_model = True
+            print(f"[API] ✅ Real model MMSE: {mmse_score:.1f} | AD Prob: {ad_probability:.3f}")
+
+        except Exception as model_err:
+            # Graceful degradation: clinical prior formula if model fails
+            print(f"[WARN] Real model failed ({model_err}). Using clinical prior formula.")
+            weights, _ = calculate_reliability(age, education, cdr)
+            l_ac, l_li, l_cl = weights
+            mmse_score  = max(0.0, min(30.0, round(31.0 - (cdr * 9.0 * (l_cl/0.2)) - (max(0, age - 70) * 0.1 * (l_ac/0.4)) + (min(4, education / 5)), 1)))
+            ad_probability = round((30 - mmse_score) / 30, 3)
+            classification = "Dementia (AD)" if mmse_score < 24 else "Healthy Control (HC)"
+            waveform  = []
+            transcript = ""
+            modality_probs = {"acoustic": l_ac, "text": l_li, "clinical": l_cl}
+            variance  = 0.5
+            confidence = 0.75
+            is_real_model = False
+        
+        # ─── Adaptive PoE Reliability Scaling ────────────────────────────────
         weights, modality_status = calculate_reliability(age, education, cdr)
         l_ac, l_li, l_cl = weights
 
-        # 2. Simulated Research-Grade Inference
-        mmse_base = 31.0 - (cdr * 9.0 * (l_cl/0.2)) - (max(0, age - 70) * 0.1 * (l_ac/0.4)) + (min(4, education / 5))
-        mmse_score = max(0.0, min(30.0, round(mmse_base, 1)))
-        
-        # 3. Clinical Risk Stratification
+        # ─── Clinical Tier ────────────────────────────────────────────────────
         if mmse_score >= 27:
-            tier, status = "Normal", "Healthy Control"
-            tier_color = "#4ade80" # Green
+            tier, status, tier_color = "Normal", "Healthy Control", "#4ade80"
         elif mmse_score >= 21:
-            tier, status = "Mild Concern", "MCI (Mild Cognitive Impairment)"
-            tier_color = "#fbbf24" # Amber
+            tier, status, tier_color = "Mild Concern", "MCI (Mild Cognitive Impairment)", "#fbbf24"
         else:
-            tier, status = "High Risk", "Alzheimer's Disease (Probable)"
-            tier_color = "#ef4444" # Red
+            tier, status, tier_color = "High Risk", "Alzheimer's Disease (Probable)", "#ef4444"
 
-        # 4. Clinical Explainability (Rationale Generator)
+        # ─── Expert Rationale ─────────────────────────────────────────────────
         rationales = []
-        if cdr >= 1.0: rationales.append(f"Primary driver: Clinical prior (CDR {cdr}) indicates established cognitive baseline variance.")
-        if l_ac < 0.35: rationales.append("Systemic Adjustment: Acoustic weighting reduced due to age-related prosody variance calibration.")
-        if mmse_score < 24: rationales.append("Neural markers detected: Significant phonetic variance and semantic drift observed.")
-        
+        if not is_real_model:
+            rationales.append("⚠️ Model checkpoint unavailable — using clinical prior estimate.")
+        if cdr >= 1.0:
+            rationales.append(f"Primary driver: CDR {cdr} establishes established cognitive baseline variance.")
+        if mmse_score < 24:
+            rationales.append("Neural markers detected: Significant phonetic variance and semantic drift observed.")
         expert_rationale = " ".join(rationales) if rationales else "Biomarkers remain stable across all trimodal experts."
 
-        # Calibration (Reliability curves simulation)
-        confidence = 0.82 + (cdr * 0.04 * (l_cl/0.2)) 
-
         result_data = {
-            "mmse_score": mmse_score,
+            "mmse_score": round(mmse_score, 1),
             "mmse_tier": tier,
             "mmse_color": tier_color,
-            "classification": "Dementia" if mmse_score < 24 else "Control",
+            "classification": classification,
             "diagnosis": status,
             "tier": tier,
             "confidence": confidence,
+            "variance": variance,
             "rationale": expert_rationale,
-            "expert_contributions": {
-                "acoustic": l_ac,
-                "linguistic": l_li,
-                "clinical": l_cl
-            },
+            "expert_contributions": {"acoustic": l_ac, "linguistic": l_li, "clinical": l_cl},
             "modality_status": modality_status,
-            "age": age,
-            "education": education,
-            "cdr": cdr,
+            "modality_probs": modality_probs,
             "ad_probability": round((30 - mmse_score) / 30, 3),
             "timestamp": datetime.now().isoformat(),
-            "trigger_active_test": mmse_score < 24 # THE NEW CORE TRIGGER
+            "waveform": waveform,
+            "transcript": transcript,
+            "age": age, "education": education, "cdr": cdr,
+            "is_real_model": is_real_model,
+            "trigger_active_test": mmse_score < 24
         }
         
         log_prediction(result_data)
