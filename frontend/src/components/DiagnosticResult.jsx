@@ -154,6 +154,36 @@ const DiagnosticResult = ({ result, activeResults }) => {
             </div>
           )}
 
+          {/* Assessment Quality Warning (Failure Mode Detection) */}
+          {activeResults && result.failure_flags && result.failure_flags.length > 0 && (
+            <div style={{ padding: '16px 20px', borderRadius: '12px', background: '#fef3c7', border: '1px solid #f59e0b', marginBottom: '0' }}>
+              <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#92400e', marginBottom: '8px' }}>
+                ⚠️ Assessment Quality: {result.assessment_quality}
+              </div>
+              {result.failure_flags.map((flag, i) => (
+                <div key={i} style={{ fontSize: '0.78rem', color: '#78350f', marginBottom: '4px' }}>
+                  • {flag.message}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Clinical Narrative Generator */}
+          {activeResults && result.clinical_narrative && result.clinical_narrative.length > 0 && (
+            <div className="panel-white" style={{ borderLeft: '4px solid var(--primary)' }}>
+              <h4 style={{ margin: '0 0 16px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Brain size={16} color="var(--primary)" /> Clinical Domain Insights
+              </h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {result.clinical_narrative.map((note, i) => (
+                  <div key={i} style={{ padding: '10px 14px', background: 'var(--bg-secondary)', borderRadius: '8px', fontSize: '0.8rem', lineHeight: '1.5', color: 'var(--text-main)' }}>
+                    {note}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Interpretable Bio-markers Table */}
           <div className="panel-white">
              <h4 style={{ margin: '0 0 20px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px' }}>

@@ -140,14 +140,18 @@ class ActiveTestEngine:
 
     def calculate_active_index(self, results):
         """
-        Computes the Active Cognitive Index using clinically-calibrated domain weights.
-        Also returns active confidence based on cross-domain variance.
+        Computes the Active Cognitive Index with composite confidence:
+          0.6 * domain_consistency  (inverse of score variance)
+          0.2 * avg_asr_confidence  (keyword hit ratio per task)
+          0.2 * latency_quality     (inverse of normalized avg latency)
         Returns: (active_index_0_to_30, active_confidence_0_to_1)
         """
         if not results:
             return 30.0, 1.0
 
         domain_scores_normalized = []
+        asr_confidences = []
+        latencies = []
         weighted_sum = 0.0
         total_weight = 0.0
 
@@ -155,25 +159,112 @@ class ActiveTestEngine:
             res = results.get(key, {})
             score = res.get("score", 0)
             max_points = task["points"]
-            normalized = score / max_points  # 0.0 to 1.0
+            normalized = score / max_points
             weight = DOMAIN_WEIGHTS.get(task["type"], 0.1)
 
             weighted_sum += normalized * weight
             total_weight += weight
             domain_scores_normalized.append(normalized)
+            asr_confidences.append(res.get("confidence", normalized))
+            latencies.append(res.get("latency", 1.5))  # default 1.5s if unknown
 
-        # Active Index scaled to 0-30
+        # Active Index on 0–30 scale
         active_ratio = weighted_sum / total_weight if total_weight > 0 else 0.0
         active_index = round(active_ratio * 30.0, 1)
         active_index = max(0.0, min(30.0, active_index))
 
-        # Active Confidence: inverse of variance across domains
-        # High variance = inconsistent performance = less reliable active signal
-        variance = float(np.var(domain_scores_normalized)) if domain_scores_normalized else 0.0
-        active_confidence = round(max(0.1, min(1.0, 1.0 - variance)), 3)
+        # ── Composite Active Confidence ────────────────────────────────────────
+        # 1. Domain Consistency (60% weight): low variance = reliable
+        variance = float(np.var(domain_scores_normalized))
+        consistency = float(np.clip(1.0 - variance, 0.0, 1.0))
 
-        print(f"[TEST_ENGINE] Active Index: {active_index}/30.0 | "
-              f"Active Confidence: {active_confidence:.3f} | Domain Variance: {variance:.3f}")
+        # 2. ASR Confidence (20% weight): avg keyword hit ratio
+        avg_asr_conf = float(np.clip(np.mean(asr_confidences), 0.0, 1.0))
+
+        # 3. Latency Quality (20% weight): avg latency normalized to [0,1]
+        #    Typical ASR takes 0.5–4s. Cap at 6s.
+        avg_latency = float(np.clip(np.mean(latencies), 0.0, 6.0))
+        latency_quality = float(1.0 - (avg_latency / 6.0))
+
+        active_confidence = round(
+            0.6 * consistency + 0.2 * avg_asr_conf + 0.2 * latency_quality,
+            3
+        )
+        active_confidence = float(np.clip(active_confidence, 0.05, 1.0))
+
+        print(f"[TEST_ENGINE] Active Index: {active_index}/30 | "
+              f"Conf: {active_confidence:.3f} "
+              f"(consistency={consistency:.2f}, asr={avg_asr_conf:.2f}, latency_q={latency_quality:.2f})")
         return active_index, active_confidence
+
+    def detect_failure_modes(self, results):
+        """
+        Inspects task metadata for signs of poor-quality assessments.
+        Returns a list of clinical warning flags.
+        """
+        flags = []
+        asr_errors = [k for k, v in results.items() if v.get("asr_error")]
+        low_asr_tasks = [k for k, v in results.items() if v.get("confidence", 1.0) < 0.2 and not v.get("asr_error")]
+        high_latency_tasks = [k for k, v in results.items() if v.get("latency", 0) > 4.0]
+        blank_responses = [k for k, v in results.items() if v.get("score", -1) == 0 and v.get("transcript", "asr error") == ""]
+
+        if asr_errors:
+            flags.append({"code": "ASR_FAILURE", "severity": "critical",
+                          "message": f"ASR failed on {len(asr_errors)} task(s). Results may be unreliable."})
+        if len(low_asr_tasks) > 2:
+            flags.append({"code": "LOW_AUDIO_QUALITY", "severity": "warning",
+                          "message": "Low keyword detection across multiple tasks. Check microphone quality."})
+        if len(high_latency_tasks) > 1:
+            flags.append({"code": "DELAYED_RESPONSES", "severity": "info",
+                          "message": "Elevated response latency detected. May reflect processing slowdown or fatigue."})
+        if blank_responses:
+            flags.append({"code": "INCOMPLETE_RESPONSES", "severity": "warning",
+                          "message": f"No response captured for {len(blank_responses)} task(s). Encourage re-assessment."})
+        return flags
+
+    def generate_clinical_narrative(self, results):
+        """
+        Produces domain-specific clinical insights from active assessment performance.
+        """
+        notes = []
+        def norm(key):
+            res = results.get(key, {})
+            task = self.TASKS.get(key)
+            if task and res:
+                return res.get("score", 0) / task["points"]
+            return None
+
+        mem = norm("memory"); rec = norm("recall")
+        flu = norm("fluency"); exe = norm("executive_trail")
+        att = norm("attention_digits"); vis = norm("visuospatial_spatial")
+        lan = norm("language_repeat"); ori = norm("orientation_time")
+
+        if rec is not None and rec < 0.5:
+            notes.append("🔴 Reduced delayed recall (< 50%) — possible hippocampal vulnerability consistent with early Alzheimer's pathology.")
+        elif rec is not None and rec < 0.8:
+            notes.append("🟡 Mild delayed recall reduction — recommend monitoring over 6-month interval.")
+
+        if flu is not None and flu < 0.5:
+            notes.append("🔴 Semantic fluency impairment detected — consistent with executive dysfunction and left temporal decline.")
+
+        if exe is not None and exe < 0.6:
+            notes.append("🔴 Set-shifting difficulty (Trail Making) — indicates frontal lobe / executive function compromise.")
+
+        if att is not None and att < 0.6:
+            notes.append("🟡 Reduced digit span accuracy — working memory and attentional control may be affected.")
+
+        if ori is not None and ori < 0.67:
+            notes.append("🔴 Spatiotemporal disorientation detected — suggests moderate-to-severe cognitive impairment.")
+
+        if vis is not None and vis < 1.0:
+            notes.append("🟡 Visuospatial reasoning deficit observed — possible parietal lobe involvement.")
+
+        if lan is not None and lan < 0.6:
+            notes.append("🟡 Sentence repetition errors noted — may reflect phonological processing difficulties.")
+
+        if not notes:
+            notes.append("🟢 Active domain performance within normal limits across all assessed domains.")
+
+        return notes
 
 test_engine = ActiveTestEngine()
