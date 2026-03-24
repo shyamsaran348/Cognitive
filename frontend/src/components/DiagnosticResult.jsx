@@ -11,6 +11,95 @@ const DiagnosticResult = ({ result, activeResults }) => {
   const statusColor = result.mmse_color || 'var(--primary)';
   const statusBg = `${statusColor}15`;
 
+  const generateClinicalPDF = () => {
+    const narrative = result.clinical_narrative || [];
+    const contributions = result.modality_contributions || {};
+    const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const tier = result.tier || 'N/A';
+    const html = `
+      <!DOCTYPE html><html><head><title>CogniSense Clinical Report</title>
+      <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #1a1a2e; margin: 0; padding: 40px; font-size: 12px; }
+        h1 { font-size: 22px; font-weight: 900; color: #1a1a2e; margin-bottom: 4px; }
+        h2 { font-size: 14px; font-weight: 700; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; margin: 24px 0 12px; }
+        .header { background: #0f172a; color: white; padding: 28px 36px; margin: -40px -40px 32px; }
+        .badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+        .badge-green { background: #d1fae5; color: #065f46; }
+        .badge-red { background: #fee2e2; color: #991b1b; }
+        .badge-yellow { background: #fef3c7; color: #92400e; }
+        .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .card { border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; }
+        .mmse-big { font-size: 56px; font-weight: 900; color: #0f172a; line-height: 1; }
+        .note { font-size: 11px; color: #64748b; line-height: 1.6; padding: 10px 14px; background: #f8fafc; border-radius: 8px; margin-bottom: 6px; }
+        .domain-row { display: flex; justify-content: space-between; border-bottom: 1px solid #f1f5f9; padding: 6px 0; font-size: 11px; }
+        .progress { height: 4px; background: #e2e8f0; border-radius: 2px; overflow: hidden; margin-top: 4px; }
+        .progress-fill { height: 100%; background: #6366f1; border-radius: 2px; }
+        .footer { margin-top: 40px; font-size: 9px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 12px; }
+        @media print { body { padding: 20px; } .header { margin: -20px -20px 24px; } }
+      </style></head><body>
+      <div class="header">
+        <div style="font-size:10px;opacity:0.6;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">CogniSense v2.45 • Restricted to Certified Practitioners</div>
+        <h1>Clinical Cognitive Assessment Report</h1>
+        <div style="margin-top:8px;font-size:11px;opacity:0.7">Generated: ${timestamp}</div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#64748b;margin-bottom:8px">Integrated MMSE Score</div>
+          <div class="mmse-big">${result.mmse_score ?? 'N/A'}</div>
+          <div style="font-size:11px;color:#64748b;margin-top:4px">/ 30.0 — ${result.diagnosis || tier}</div>
+          <span class="badge ${tier === 'Normal' ? 'badge-green' : tier === 'Mild Concern' ? 'badge-yellow' : 'badge-red'}" style="margin-top:12px">${tier}</span>
+        </div>
+        <div class="card">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#64748b;margin-bottom:8px">Consensus Parameters</div>
+          <div class="domain-row"><span>Passive MMSE</span><span><b>${result.mmse_passive ?? 'N/A'}</b></span></div>
+          <div class="domain-row"><span>Active Index</span><span><b>${result.mmse_active ?? 'N/A'}</b></span></div>
+          <div class="domain-row"><span>Fused Confidence</span><span><b>${result.confidence ? (result.confidence * 100).toFixed(1) + '%' : 'N/A'}</b></span></div>
+          <div class="domain-row"><span>Signal Agreement</span><span><b>${result.agreement_icon || ''} ${result.agreement || 'N/A'}</b></span></div>
+          <div class="domain-row"><span>Passive Contribution</span><span><b>${contributions.passive_voice_biomarkers || 'N/A'}</b></span></div>
+          <div class="domain-row"><span>Active Contribution</span><span><b>${contributions.active_cognitive_probes || 'N/A'}</b></span></div>
+        </div>
+      </div>
+
+      <h2>Clinical Domain Performance</h2>
+      <div class="grid2">
+        ${activeResults ? Object.entries({
+          'Memory (Registration)': [activeResults.memory?.score, 3],
+          'Language (Repetition)': [activeResults.language_repeat?.score, 5],
+          'Fluency (Semantic)': [activeResults.fluency?.score, 10],
+          'Executive (Trail)': [activeResults.executive_trail?.score, 5],
+          'Attention (Digits)': [activeResults.attention_digits?.score, 5],
+          'Visuospatial': [activeResults.visuospatial_spatial?.score, 3],
+          'Orientation (Time)': [activeResults.orientation_time?.score, 3],
+          'Memory (Recall)': [activeResults.recall?.score, 3],
+        }).map(([label, [score, max]]) => `
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+              <span style="font-weight:600">${label}</span>
+              <span><b>${score ?? 0}</b> / ${max}</span>
+            </div>
+            <div class="progress"><div class="progress-fill" style="width:${((score ?? 0) / max * 100).toFixed(0)}%"></div></div>
+          </div>
+        `).join('') : '<div>No active assessment data.</div>'}
+      </div>
+
+      <h2>Clinical Narrative & Domain Insights</h2>
+      ${narrative.length > 0 ? narrative.map(n => `<div class="note">${n}</div>`).join('') : '<div class="note">🟢 Active domain performance within normal limits.</div>'}
+
+      <h2>AI Expert Rationale</h2>
+      <div class="note">${result.rationale || 'Not available.'}</div>
+
+      <div class="footer">
+        ⚠️ This report is generated by an AI-assisted diagnostic instrument (CogniSense v2.45). It is intended to support, not replace, clinical judgment. All findings must be reviewed and validated by a licensed neurologist or gerratrician. Unauthorized distribution is prohibited.
+      </div>
+      <script>window.onload = () => window.print();</script>
+      </body></html>
+    `;
+    const w = window.open('', '_blank', 'width=900,height=700');
+    w.document.write(html);
+    w.document.close();
+  };
+
   return (
     <div className="diagnostic-synthesis animate-slide-up">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -273,7 +362,7 @@ const DiagnosticResult = ({ result, activeResults }) => {
               <button 
                 className="btn-primary" 
                 style={{ fontSize: '0.75rem', padding: '12px', background: 'var(--text-main)', color: 'white' }}
-                onClick={() => window.print()}
+                onClick={generateClinicalPDF}
               >
                 <FileText size={14} /> Export Clinical PDF
               </button>

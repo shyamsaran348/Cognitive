@@ -82,7 +82,13 @@ const ActiveAssessment = ({ onComplete }) => {
       });
       const data = await res.json();
       
-      setResults(prev => ({ ...prev, [promptData.key]: data }));
+      // Store only the domain result (score + metadata), NOT the full API response wrapper.
+      // The finalize endpoint expects: { memory: {score: N}, fluency: {score: N, confidence: N, latency: N} ... }
+      const domainResult = { 
+        score: data.score, 
+        ...(data.metadata || {})
+      };
+      setResults(prev => ({ ...prev, [promptData.key]: domainResult }));
       setIsProcessing(false);
       
       // Auto-advance after a brief delay
