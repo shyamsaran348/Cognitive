@@ -164,6 +164,23 @@ function App() {
     setIsLoading(false); 
   };
 
+  const handleActiveComplete = async (activeData, testType = 'cogni') => {
+    setActiveResults(activeData);
+    try {
+      const res = await axios.post("http://localhost:8000/active_test/finalize", {
+        passive_data: results,
+        active_results: activeData,
+        test_type: testType
+      });
+      if (res.data.status === 'success') {
+        setResults(res.data.data); // Update with fused data
+      }
+    } catch (err) {
+      console.error(`Final synthesis for ${testType} failed:`, err);
+    }
+    setCurrentStep(4); // Show Results
+  };
+
   const handleBack = () => setCurrentStep(prev => Math.max(0, prev - 1));
   const handleNext = () => setCurrentStep(prev => Math.min(5, prev + 1)); 
 
@@ -243,21 +260,7 @@ function App() {
 
         {currentStep === 5 && (
           <div className="container" style={{ maxWidth: '1000px' }}>
-             <ActiveAssessment onComplete={async (activeData) => {
-               setActiveResults(activeData);
-               try {
-                 const res = await axios.post("http://localhost:8000/active_test/finalize", {
-                   passive_data: results,
-                   active_results: activeData
-                 });
-                 if (res.data.status === 'success') {
-                   setResults(res.data.data); // Update with fused data
-                 }
-               } catch (err) {
-                 console.error("Final synthesis failed:", err);
-               }
-               setCurrentStep(4);
-             }} />
+             <ActiveAssessment onComplete={(data) => handleActiveComplete(data, 'cogni')} />
           </div>
         )}
 
@@ -268,10 +271,7 @@ function App() {
               testType="ace3"
               title="ACE-III Assessment"
               onBack={() => setCurrentStep(2)}
-              onComplete={(data) => {
-                setActiveResults(data);
-                setCurrentStep(2);
-              }}
+              onComplete={(data) => handleActiveComplete(data, 'ace3')}
             />
           </div>
         )}
@@ -283,10 +283,7 @@ function App() {
               testType="moca"
               title="MoCA Assessment"
               onBack={() => setCurrentStep(2)}
-              onComplete={(data) => {
-                setActiveResults(data);
-                setCurrentStep(2);
-              }}
+              onComplete={(data) => handleActiveComplete(data, 'moca')}
             />
           </div>
         )}

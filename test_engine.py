@@ -556,7 +556,7 @@ class ActiveTestEngine:
             }
         return None
 
-    def calculate_active_index(self, results):
+    def calculate_active_index(self, results, test_type: str = "cogni"):
         """
         Computes the Active Cognitive Index with composite confidence:
           0.6 * domain_consistency  (inverse of score variance)
@@ -567,17 +567,18 @@ class ActiveTestEngine:
         if not results:
             return 30.0, 1.0
 
+        task_registry = self.get_tasks_for_type(test_type)
         domain_scores_normalized = []
         asr_confidences = []
         latencies = []
         weighted_sum = 0.0
         total_weight = 0.0
 
-        for key, task in self.TASKS.items():
+        for key, task in task_registry.items():
             res = results.get(key, {})
             score = res.get("score", 0)
             max_points = task["points"]
-            normalized = score / max_points
+            normalized = score / max_points if max_points > 0 else 1.0
             weight = DOMAIN_WEIGHTS.get(task["type"], 0.1)
 
             weighted_sum += normalized * weight

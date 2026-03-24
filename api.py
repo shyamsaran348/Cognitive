@@ -186,12 +186,13 @@ async def active_test_finalize(
     """
     passive_data = payload.get("passive_data", {})
     active_results = payload.get("active_results", {})
+    test_type = payload.get("test_type", "cogni")
     
     if not passive_data or not active_results:
         return {"status": "error", "message": "Incomplete data for synthesis."}
         
     # ─── 1. Compute Active Index AND Composite Active Confidence ──────────────
-    active_index, active_confidence = test_engine.calculate_active_index(active_results)
+    active_index, active_confidence = test_engine.calculate_active_index(active_results, test_type=test_type)
     passive_mmse = passive_data.get("mmse_score", 30.0)
     
     # ─── 2. Normalize Passive Confidence (Stable Version) ────────────────────
