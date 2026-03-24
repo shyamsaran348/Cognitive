@@ -18,6 +18,7 @@ import TrainingMetrics from './components/TrainingMetrics';
 import TemporalTrend from './components/TemporalTrend';
 import ClinicalSummary from './components/ClinicalSummary';
 import ActiveAssessment from './components/ActiveAssessment';
+import GenericAssessment from './components/GenericAssessment';
 
 const FlowStepper = ({ currentStep }) => {
   const steps = ["Orientation", "Clinical Details", "Audio Data", "Analysis"];
@@ -37,7 +38,8 @@ const FlowStepper = ({ currentStep }) => {
 };
 
 function App() {
-  const [currentStep, setCurrentStep] = useState(0); // 0: Home, 1: Profile, 2: Tasks, 3: Audio, 4: Result, 5: Active Assessment
+  const [currentStep, setCurrentStep] = useState(0); // 0:Home 1:Profile 2:Tasks 3:Audio 4:Result 5:ActiveAssess 6:ACE3 7:MoCA
+  const [selectedTest, setSelectedTest] = useState('voice'); // which test was chosen in the hub
   const [file, setFile] = useState(null);
   const [age, setAge] = useState(65.0);
   const [education, setEducation] = useState(12.0);
@@ -206,7 +208,15 @@ function App() {
              )}
 
              {currentStep === 2 && (
-               <CognitiveTasksScreen onNext={handleNext} onBack={handleBack} />
+               <CognitiveTasksScreen
+                 onSelectTest={(testId) => {
+                   setSelectedTest(testId);
+                   if (testId === 'voice') setCurrentStep(3);
+                   else if (testId === 'ace3') setCurrentStep(6);
+                   else if (testId === 'moca') setCurrentStep(7);
+                 }}
+                 onBack={handleBack}
+               />
              )}
 
              {currentStep === 3 && (
@@ -248,6 +258,36 @@ function App() {
                }
                setCurrentStep(4);
              }} />
+          </div>
+        )}
+
+        {/* ACE-III Assessment */}
+        {currentStep === 6 && (
+          <div className="container" style={{ maxWidth: '1000px' }}>
+            <GenericAssessment
+              testType="ace3"
+              title="ACE-III Assessment"
+              onBack={() => setCurrentStep(2)}
+              onComplete={(data) => {
+                setActiveResults(data);
+                setCurrentStep(2);
+              }}
+            />
+          </div>
+        )}
+
+        {/* MoCA Assessment */}
+        {currentStep === 7 && (
+          <div className="container" style={{ maxWidth: '1000px' }}>
+            <GenericAssessment
+              testType="moca"
+              title="MoCA Assessment"
+              onBack={() => setCurrentStep(2)}
+              onComplete={(data) => {
+                setActiveResults(data);
+                setCurrentStep(2);
+              }}
+            />
           </div>
         )}
       </main>
