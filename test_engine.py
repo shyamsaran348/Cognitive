@@ -8,15 +8,16 @@ spec = os.path.join(os.getcwd(), "03_feature_extractor.py")
 extractor = import_module("03_feature_extractor")
 
 # Clinically-calibrated domain weights (based on MoCA/ACE-III sensitivity literature)
+# These apply per-domain, averaged across the domain's 2 tests.
 DOMAIN_WEIGHTS = {
-    "memory":      0.20,  # Hippocampal proxy — highest sensitivity for early AD
-    "recall":      0.20,  # Delayed recall — strongest single predictor of AD
-    "executive":   0.15,  # Frontal lobe — key for MCI differentiation
-    "fluency":     0.15,  # Language/executive overlap
-    "attention":   0.15,  # Working memory proxy
-    "language":    0.10,  # Phonological integrity
-    "visuospatial":0.10,  # Parietal integrity
-    "orientation": 0.10,  # Temporal/spatial awareness
+    "memory":       0.20,   # Hippocampal proxy — highest sensitivity for early AD
+    "recall":       0.20,   # Delayed recall — strongest single predictor of AD
+    "executive":    0.15,   # Frontal lobe — key for MCI differentiation
+    "fluency":      0.15,   # Language/executive overlap
+    "attention":    0.15,   # Working memory proxy
+    "language":     0.10,   # Phonological integrity
+    "visuospatial": 0.10,   # Parietal integrity
+    "orientation":  0.10,   # Temporal/spatial awareness
 }
 
 class ActiveTestEngine:
@@ -24,57 +25,136 @@ class ActiveTestEngine:
     Orchestrates prompted cognitive tasks and scores them using Whisper and
     clinically-calibrated domain weighting. Produces rich metadata per task.
     """
+    # ── 2 Tests Per Domain — Full Clinical Battery ────────────────────────────
     TASKS = {
+        # ── DOMAIN 1: MEMORY (Registration) ────────────────────────────────────
         "memory": {
-            "prompt": "Please repeat these three words: Apple, Penny, Table. Keep them in mind, I will ask you again later.",
+            "prompt": "Please repeat these three words: Apple, Penny, Table. Keep them in mind — I will ask you again later.",
             "type": "memory",
             "keywords": ["apple", "penny", "table"],
-            "points": 3
+            "points": 3,
+            "domain_label": "Memory – Registration"
         },
+        "story_recall": {
+            "prompt": ("Listen carefully to this short story, then repeat it back to me in your own words: "
+                       "'A woman named Anna went to the market on a rainy Tuesday. She bought bread, eggs, and milk, then returned home.'"),
+            "type": "memory",
+            "keywords": ["anna", "market", "tuesday", "bread", "eggs", "milk", "rainy", "home"],
+            "points": 8,
+            "domain_label": "Memory – Story Recall"
+        },
+
+        # ── DOMAIN 2: LANGUAGE ──────────────────────────────────────────────────
         "language_repeat": {
             "prompt": "Repeat this sentence exactly: 'The cat always hides under the wooden table.'",
             "type": "language",
             "keywords": ["cat", "hides", "under", "wooden", "table"],
-            "points": 5
+            "points": 5,
+            "domain_label": "Language – Sentence Repetition"
         },
+        "language_naming": {
+            "prompt": ("I will describe three objects. Tell me what each one is called. "
+                       "First: something used to keep food cold. "
+                       "Second: something you use to tell the time. "
+                       "Third: something you use to write."),
+            "type": "language",
+            "keywords": ["fridge", "refrigerator", "clock", "watch", "pen", "pencil"],
+            "points": 6,
+            "domain_label": "Language – Naming"
+        },
+
+        # ── DOMAIN 3: FLUENCY ───────────────────────────────────────────────────
         "fluency": {
-            "prompt": "Name as many animals as you can in the next 30 seconds. Go!",
+            "prompt": "Name as many animals as you can in the next 30 seconds. Start now!",
             "type": "fluency",
             "keywords": ["dog", "cat", "bird", "lion", "tiger", "elephant", "cow", "pig", "sheep",
                          "horse", "snake", "fish", "monkey", "bear", "rabbit", "deer", "wolf",
-                         "fox", "frog", "turtle"],
-            "points": 10
+                         "fox", "frog", "turtle", "chicken", "duck", "goat", "rat", "whale"],
+            "points": 10,
+            "domain_label": "Fluency – Semantic"
         },
+        "fluency_phonemic": {
+            "prompt": "Say as many words as you can that start with the letter F. You have 30 seconds. Go!",
+            "type": "fluency",
+            "keywords": ["fan", "fire", "fish", "foot", "farm", "flag", "face", "fast", "fall",
+                         "feel", "find", "fold", "food", "five", "fork", "fly", "far", "fun",
+                         "fill", "fact", "form", "flow", "ford", "fair", "film"],
+            "points": 10,
+            "domain_label": "Fluency – Phonemic (F-words)"
+        },
+
+        # ── DOMAIN 4: EXECUTIVE FUNCTION ────────────────────────────────────────
         "executive_trail": {
-            "prompt": "Say this sequence: 1-A, 2-B, 3-C, 4-D, 5-E.",
+            "prompt": "Say this alternating sequence out loud: 1-A, 2-B, 3-C, 4-D, 5-E.",
             "type": "executive",
             "keywords": ["1", "a", "2", "b", "3", "c", "4", "d", "5", "e"],
-            "points": 5
+            "points": 5,
+            "domain_label": "Executive – Verbal Trail Making"
         },
+        "executive_abstract": {
+            "prompt": "I will name two things. Tell me how they are similar. First: How are a banana and an orange similar? Second: How are a train and a bicycle similar?",
+            "type": "executive",
+            "keywords": ["fruit", "food", "yellow", "transport", "vehicle", "ride", "travel", "wheels"],
+            "points": 4,
+            "domain_label": "Executive – Abstract Reasoning"
+        },
+
+        # ── DOMAIN 5: ATTENTION ─────────────────────────────────────────────────
         "attention_digits": {
-            "prompt": "Repeat these numbers in order: 7-4-1-9-3.",
+            "prompt": "Repeat these numbers in the exact order I say them: 7 — 4 — 1 — 9 — 3.",
             "type": "attention",
-            "keywords": ["7", "4", "1", "9", "3"],
-            "points": 5
+            "keywords": ["7", "4", "1", "9", "3", "seven", "four", "one", "nine", "three"],
+            "points": 5,
+            "domain_label": "Attention – Digit Span"
         },
+        "attention_serial7": {
+            "prompt": "Starting from 100, subtract 7 and keep going. Say each answer out loud: 100 minus 7 is... and continue.",
+            "type": "attention",
+            "keywords": ["93", "86", "79", "72", "65"],
+            "points": 5,
+            "domain_label": "Attention – Serial 7s"
+        },
+
+        # ── DOMAIN 6: VISUOSPATIAL ──────────────────────────────────────────────
         "visuospatial_spatial": {
-            "prompt": "If you walk North, turn left, and then turn left again, which direction are you facing?",
+            "prompt": "If you walk facing North, then turn left, and then turn left again — which direction are you now facing?",
             "type": "visuospatial",
             "keywords": ["south"],
-            "points": 3
+            "points": 3,
+            "domain_label": "Visuospatial – Spatial Reasoning"
         },
+        "visuospatial_clock": {
+            "prompt": "Describe what a clock looks like. Think about its shape, what is on its face, and what goes around it.",
+            "type": "visuospatial",
+            "keywords": ["round", "circle", "numbers", "hands", "twelve", "tick", "face", "hour", "minute"],
+            "points": 5,
+            "domain_label": "Visuospatial – Object Description"
+        },
+
+        # ── DOMAIN 7: ORIENTATION ───────────────────────────────────────────────
         "orientation_time": {
-            "prompt": "What is today's date? (Day, Month, and Year)",
+            "prompt": "What is today's date? Tell me the day, month, and year.",
             "type": "orientation",
-            "keywords": ["march", "2026", "tuesday", "24", "twenty-fourth"],
-            "points": 3
+            "keywords": ["march", "2026", "tuesday", "25", "twenty-fifth"],
+            "points": 3,
+            "domain_label": "Orientation – Time"
         },
+        "orientation_place": {
+            "prompt": "Where are you right now? Please describe the place — the city, and if you can, the type of place you are in.",
+            "type": "orientation",
+            "keywords": ["india", "home", "house", "hospital", "clinic", "room", "office", "building", "city"],
+            "points": 3,
+            "domain_label": "Orientation – Place"
+        },
+
+        # ── MEMORY RECALL (Delayed — always last) ──────────────────────────────
         "recall": {
-            "prompt": "What were the three words I asked you to remember earlier?",
+            "prompt": "Earlier I asked you to remember three words. What were they?",
             "type": "recall",
             "keywords": ["apple", "penny", "table"],
-            "points": 3
-        }
+            "points": 3,
+            "domain_label": "Memory – Delayed Recall"
+        },
     }
 
     def score_response(self, task_key, audio_path):
@@ -234,36 +314,86 @@ class ActiveTestEngine:
                 return res.get("score", 0) / task["points"]
             return None
 
-        mem = norm("memory"); rec = norm("recall")
-        flu = norm("fluency"); exe = norm("executive_trail")
-        att = norm("attention_digits"); vis = norm("visuospatial_spatial")
-        lan = norm("language_repeat"); ori = norm("orientation_time")
+        mem = norm("memory"); rec = norm("recall"); sto = norm("story_recall")
+        flu = norm("fluency"); flu_ph = norm("fluency_phonemic")
+        exe = norm("executive_trail"); exe_ab = norm("executive_abstract")
+        att = norm("attention_digits"); att_s7 = norm("attention_serial7")
+        vis = norm("visuospatial_spatial"); vis_cl = norm("visuospatial_clock")
+        lan = norm("language_repeat"); lan_nm = norm("language_naming")
+        ori = norm("orientation_time"); ori_pl = norm("orientation_place")
 
-        if rec is not None and rec < 0.5:
-            notes.append("🔴 Reduced delayed recall (< 50%) — possible hippocampal vulnerability consistent with early Alzheimer's pathology.")
-        elif rec is not None and rec < 0.8:
-            notes.append("🟡 Mild delayed recall reduction — recommend monitoring over 6-month interval.")
+        # Average across 2 tests per domain where both are available
+        def avg(*vals): 
+            valid = [v for v in vals if v is not None]
+            return sum(valid) / len(valid) if valid else None
 
-        if flu is not None and flu < 0.5:
-            notes.append("🔴 Semantic fluency impairment detected — consistent with executive dysfunction and left temporal decline.")
+        mem_avg = avg(mem, sto)
+        rec_avg = rec
+        flu_avg = avg(flu, flu_ph)
+        exe_avg = avg(exe, exe_ab)
+        att_avg = avg(att, att_s7)
+        vis_avg = avg(vis, vis_cl)
+        lan_avg = avg(lan, lan_nm)
+        ori_avg = avg(ori, ori_pl)
 
-        if exe is not None and exe < 0.6:
-            notes.append("🔴 Set-shifting difficulty (Trail Making) — indicates frontal lobe / executive function compromise.")
+        # ── Memory ───────────────────────────────────────────────────────────────
+        if rec_avg is not None and rec_avg < 0.34:
+            notes.append("🔴 Severely impaired delayed recall (< 34%) — strong indicator of hippocampal atrophy consistent with Alzheimer's disease.")
+        elif rec_avg is not None and rec_avg < 0.67:
+            notes.append("🟡 Reduced delayed recall — possible hippocampal vulnerability. Recommend 6-month longitudinal monitoring.")
+        if sto is not None and sto < 0.5:
+            notes.append("🔴 Story recall deficit — impaired narrative memory encoding suggests medial temporal dysfunction.")
 
-        if att is not None and att < 0.6:
+        # ── Semantic & Phonemic Fluency ──────────────────────────────────────────
+        if flu_avg is not None and flu_avg < 0.4:
+            notes.append("🔴 Combined fluency impairment (semantic + phonemic) — consistent with fronto-temporal decline and reduced lexical access.")
+        elif flu is not None and flu < 0.5:
+            notes.append("🔴 Semantic fluency impairment — consistent with left temporal and executive dysfunction.")
+        if flu_ph is not None and flu_ph < 0.4:
+            notes.append("🟡 Phonemic fluency below threshold — may indicate reduced phonological processing speed.")
+
+        # ── Executive Function ───────────────────────────────────────────────────
+        if exe_avg is not None and exe_avg < 0.5:
+            notes.append("🔴 Executive dysfunction confirmed across trail making and abstract reasoning — frontal lobe compromise likely.")
+        elif exe is not None and exe < 0.6:
+            notes.append("🔴 Set-shifting difficulty (Trail Making) — indicates frontal executive function compromise.")
+        if exe_ab is not None and exe_ab < 0.5:
+            notes.append("🟡 Abstract reasoning deficit — reduced ability to identify categorical similarities (banana/orange).")
+
+        # ── Attention ────────────────────────────────────────────────────────────
+        if att_avg is not None and att_avg < 0.5:
+            notes.append("🔴 Combined attentional deficit (digit span + serial 7s) — working memory and sustained attention both compromised.")
+        elif att is not None and att < 0.6:
             notes.append("🟡 Reduced digit span accuracy — working memory and attentional control may be affected.")
+        if att_s7 is not None and att_s7 < 0.4:
+            notes.append("🟡 Serial 7s impairment — difficulty with sustained mental arithmetic suggests prefrontal vulnerability.")
 
-        if ori is not None and ori < 0.67:
-            notes.append("🔴 Spatiotemporal disorientation detected — suggests moderate-to-severe cognitive impairment.")
+        # ── Visuospatial ─────────────────────────────────────────────────────────
+        if vis_avg is not None and vis_avg < 0.5:
+            notes.append("🔴 Visuospatial impairment (spatial reasoning + object description) — possible parietal lobe involvement.")
+        elif vis is not None and vis < 1.0:
+            notes.append("🟡 Spatial reasoning deficit observed. May indicate parietal lobe involvement.")
+        if vis_cl is not None and vis_cl < 0.4:
+            notes.append("🟡 Impaired clock description — difficulty with structured object visualization.")
 
-        if vis is not None and vis < 1.0:
-            notes.append("🟡 Visuospatial reasoning deficit observed — possible parietal lobe involvement.")
-
-        if lan is not None and lan < 0.6:
+        # ── Language ─────────────────────────────────────────────────────────────
+        if lan_avg is not None and lan_avg < 0.5:
+            notes.append("🔴 Language impairment across repetition and naming — possible left hemisphere dysfunction.")
+        elif lan is not None and lan < 0.6:
             notes.append("🟡 Sentence repetition errors noted — may reflect phonological processing difficulties.")
+        if lan_nm is not None and lan_nm < 0.5:
+            notes.append("🟡 Object naming difficulties — anomia may reflect temporal lobe lexical retrieval failure.")
+
+        # ── Orientation ──────────────────────────────────────────────────────────
+        if ori_avg is not None and ori_avg < 0.5:
+            notes.append("🔴 Disorientation in both time and place — suggests moderate-to-severe global cognitive impairment.")
+        elif ori is not None and ori < 0.67:
+            notes.append("🔴 Temporal disorientation detected — suggests moderate cognitive impairment.")
+        if ori_pl is not None and ori_pl < 0.34:
+            notes.append("🔴 Place disorientation — patient unable to identify current location. High concern for advanced dementia.")
 
         if not notes:
-            notes.append("🟢 Active domain performance within normal limits across all assessed domains.")
+            notes.append("🟢 Active domain performance within normal limits across all 7 assessed domains (14 tasks).")
 
         return notes
 

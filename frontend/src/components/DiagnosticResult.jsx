@@ -61,17 +61,24 @@ const DiagnosticResult = ({ result, activeResults }) => {
         </div>
       </div>
 
-      <h2>Clinical Domain Performance</h2>
+      <h2>Clinical Domain Performance (7 Domains · 15 Tasks)</h2>
       <div class="grid2">
         ${activeResults ? Object.entries({
-          'Memory (Registration)': [activeResults.memory?.score, 3],
-          'Language (Repetition)': [activeResults.language_repeat?.score, 5],
-          'Fluency (Semantic)': [activeResults.fluency?.score, 10],
-          'Executive (Trail)': [activeResults.executive_trail?.score, 5],
-          'Attention (Digits)': [activeResults.attention_digits?.score, 5],
-          'Visuospatial': [activeResults.visuospatial_spatial?.score, 3],
-          'Orientation (Time)': [activeResults.orientation_time?.score, 3],
-          'Memory (Recall)': [activeResults.recall?.score, 3],
+          'Memory – Registration': [activeResults.memory?.score, 3],
+          'Memory – Story Recall': [activeResults.story_recall?.score, 8],
+          'Language – Repetition': [activeResults.language_repeat?.score, 5],
+          'Language – Naming': [activeResults.language_naming?.score, 6],
+          'Fluency – Semantic': [activeResults.fluency?.score, 10],
+          'Fluency – Phonemic': [activeResults.fluency_phonemic?.score, 10],
+          'Executive – Trail Making': [activeResults.executive_trail?.score, 5],
+          'Executive – Abstract': [activeResults.executive_abstract?.score, 4],
+          'Attention – Digit Span': [activeResults.attention_digits?.score, 5],
+          'Attention – Serial 7s': [activeResults.attention_serial7?.score, 5],
+          'Visuospatial – Spatial': [activeResults.visuospatial_spatial?.score, 3],
+          'Visuospatial – Clock': [activeResults.visuospatial_clock?.score, 5],
+          'Orientation – Time': [activeResults.orientation_time?.score, 3],
+          'Orientation – Place': [activeResults.orientation_place?.score, 3],
+          'Memory – Delayed Recall': [activeResults.recall?.score, 3],
         }).map(([label, [score, max]]) => `
           <div class="card">
             <div style="display:flex;justify-content:space-between;margin-bottom:4px">
