@@ -39,3 +39,13 @@ frontend/dist/
 # Temporary Audio Artifacts (Patient Recordings)
 *.wav
 /tmp/active_*
+
+# Internal AI Research Documentation
+CLINICAL_EVALUATION_FRAMEWORK.md
+PROJECT_CONTEXT_SUMMARY.md
+RUN_GUIDE.md
+TECHNICAL_DEEP_DIVE.md
+test_api_endpoints.py
+test_backend_full.py
+test_normalization.py
+verify_poe_weights.py
