@@ -160,40 +160,43 @@ def extract_wav2vec(audio_path: str) -> Optional[np.ndarray]:
 # Whisper large-v3 encoder
 # ---------------------------------------------------------------------------
 
-def extract_whisper(audio_path: str, transcribe: bool = False) -> tuple[Optional[np.ndarray], Optional[str]]:
+_whisper_models = {}  # Map of model_size -> model
+
+def extract_whisper(audio_path: str, transcribe: bool = False, model_size: str = "large-v3") -> tuple[Optional[np.ndarray], Optional[str]]:
     """
-    Run Whisper large-v3, return mean-pooled encoder embeddings (1280-dim).
+    Run Whisper, return mean-pooled encoder embeddings (1280 or model-specific dim).
     If transcribe=True, also returns the ASR text.
     """
-    global _whisper_model
-    if _whisper_model is None:
+    global _whisper_models
+    if model_size not in _whisper_models:
         try:
             import whisper
-            print("[INFO] Loading Whisper large-v3 (first run = ~2GB download)...")
-            # IMPORTANT: Force CPU for Whisper — Apple MPS produces silent NaN
-            # embeddings on certain mel-spectrogram shapes. Wav2vec and RoBERTa
-            # are safe on MPS; only Whisper has this issue.
-            _whisper_model = whisper.load_model("large-v3", device="cpu")
+            print(f"[INFO] Loading Whisper {model_size} (on CPU)...")
+            _whisper_models[model_size] = whisper.load_model(model_size, device="cpu")
         except Exception as e:
-            print(f"[ERROR] Whisper load failed: {e}")
+            print(f"[ERROR] Whisper {model_size} load failed: {e}")
             return None, None
+    
+    model = _whisper_models[model_size]
 
     try:
         import whisper
         import torch
         audio = whisper.load_audio(audio_path)
         audio = whisper.pad_or_trim(audio)
-        # Whisper large-v3 specifically requires 128 mel bins.
-        mel = whisper.log_mel_spectrogram(audio, n_mels=128).to(_whisper_model.device)
+        
+        # Whisper large-v3 requires 128 mel bins; others (base, small) use 80.
+        n_mels = 128 if "large-v3" in model_size else 80
+        mel = whisper.log_mel_spectrogram(audio, n_mels=n_mels).to(model.device)
         
         with torch.no_grad():
-            encoder_out = _whisper_model.encoder(mel.unsqueeze(0))
+            encoder_out = model.encoder(mel.unsqueeze(0))
             
             text = None
             if transcribe:
                 # Use greedy decoding for clinical speed
                 options = whisper.DecodingOptions(fp16=False, language="en")
-                result = whisper.decode(_whisper_model, mel, options)
+                result = whisper.decode(model, mel, options)
                 text = result.text
 
         # Mean-pool across time  →  (1280,)

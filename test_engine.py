@@ -419,7 +419,8 @@ class ActiveTestEngine:
         elif audio_path:
             print(f"[TEST_ENGINE] Transcribing response for task: {task_key}")
             try:
-                _, transcript = extractor.extract_whisper(audio_path, transcribe=True)
+                # Use faster 'base' model for active tasks to ensure smooth transitions
+                _, transcript = extractor.extract_whisper(audio_path, transcribe=True, model_size="base")
                 transcript = transcript.lower().strip()
             except Exception as e:
                 print(f"[ERROR] ASR Failed: {e}")

@@ -334,14 +334,16 @@ async def predict(
                 raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
             
             print(f"[API] Running real PoE inference on {normalized_path}")
-            inference_result = run_inference(
-                audio_path    = normalized_path,
-                transcript    = None,   # Auto-transcribes via Whisper
-                age           = age,
-                education     = education,
-                cdr           = cdr,
-                checkpoint_path = checkpoint_path
-            )
+            async with SCORING_LOCK:
+                inference_result = await asyncio.to_thread(
+                    run_inference,
+                    audio_path    = normalized_path,
+                    transcript    = None,   # Auto-transcribes via Whisper
+                    age           = age,
+                    education     = education,
+                    cdr           = cdr,
+                    checkpoint_path = checkpoint_path
+                )
             
             mmse_score    = float(np.clip(inference_result["mmse_score"], 0.0, 30.0))
             classification = inference_result["classification"]

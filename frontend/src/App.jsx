@@ -198,7 +198,7 @@ function App() {
       const res = await axios.post("http://localhost:8000/active_test/finalize", {
         passive_data: passiveToUse,
         active_batteries: activeToUse
-      });
+      }, { timeout: 60000 });
       if (res.data.status === 'success') {
         const finalData = res.data.data;
         setResults(finalData); 

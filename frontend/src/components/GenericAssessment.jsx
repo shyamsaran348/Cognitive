@@ -126,7 +126,16 @@ const GenericAssessment = ({ testType, title, onComplete, onBack }) => {
       const { formData, taskKey } = scoringQueueRef.current.shift();
       
       try {
-        const res = await fetch('http://localhost:8000/active_test/score', { method: 'POST', body: formData });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s clinical timeout
+        
+        const res = await fetch('http://localhost:8000/active_test/score', { 
+          method: 'POST', 
+          body: formData,
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
         const data = await res.json();
         const domainResult = { score: data.score, ...(data.metadata || {}) };
         finalResultsRef.current = { ...finalResultsRef.current, [taskKey]: domainResult };
