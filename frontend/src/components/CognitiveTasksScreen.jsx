@@ -14,21 +14,12 @@ const CognitiveTasksScreen = ({ onSelectTest, onBack }) => {
     },
     {
       id: 'ace3',
-      title: 'ACE-III',
-      subtitle: "Addenbrooke\u2019s Cognitive Examination III",
-      desc: 'Digitised ACE-III: 10 voice-driven tasks covering Attention, Memory, Verbal Fluency, Language, and Visuospatial domains.',
+      title: 'Active Clinical Battery',
+      subtitle: "Comprehensive Voice-Driven Cognitive Probe",
+      desc: 'Unified 10-task assessment covering Attention, Memory, Verbal Fluency, Language, and Visuospatial domains.',
       status: 'Live',
       active: true,
       tags: ['Attention', 'Memory', 'Fluency', 'Language', 'Visuospatial']
-    },
-    {
-      id: 'moca',
-      title: 'MoCA',
-      subtitle: 'Montreal Cognitive Assessment',
-      desc: 'Digital MoCA: 13 tasks sensitive for early-stage MCI. Includes Trail Making, Abstraction, and Delayed Recall.',
-      status: 'Live',
-      active: true,
-      tags: ['Orientation', 'Recall', 'Attention', 'Executive', 'Language']
     }
   ];
 
@@ -36,13 +27,13 @@ const CognitiveTasksScreen = ({ onSelectTest, onBack }) => {
     <div className="tasks-page animate-slide-up">
       <div style={{ marginBottom: '48px' }}>
         <div className="badge-green" style={{ marginBottom: '16px' }}>Assessment Suite</div>
-        <h2 style={{ fontSize: '3rem', margin: '0 0 20px' }}>Cognitive Test Hub</h2>
+        <h2 style={{ fontSize: '3rem', margin: '0 0 20px' }}>Clinical Assessment Hub</h2>
         <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem', maxWidth: '800px' }}>
-          Three complementary voice-driven assessment pathways — each feeds into the final diagnostic fusion alongside your voice analysis.
+          Complementary diagnostic pathways — each feeds into the final Bayesian fusion alongside your voice analysis.
         </p>
       </div>
 
-      <div className="test-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+      <div className="test-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
         {tests.map(test => (
           <div
             key={test.id}
@@ -57,7 +48,7 @@ const CognitiveTasksScreen = ({ onSelectTest, onBack }) => {
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div className="stream-icon" style={{ background: 'var(--accent)' }}>
-                {test.id === 'voice' ? <Mic size={20} /> : test.id === 'ace3' ? <FileText size={20} /> : <Layout size={20} />}
+                {test.id === 'voice' ? <Mic size={20} /> : <FileText size={20} />}
               </div>
               <div style={{ fontSize: '0.6rem', padding: '4px 8px', borderRadius: '4px', fontWeight: 800, background: '#dcfce7', color: '#166534' }}>
                 {test.status}

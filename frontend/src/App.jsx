@@ -19,18 +19,28 @@ import TemporalTrend from './components/TemporalTrend';
 import ClinicalSummary from './components/ClinicalSummary';
 import ActiveAssessment from './components/ActiveAssessment';
 import GenericAssessment from './components/GenericAssessment';
+import ConsensusReviewScreen from './components/ConsensusReviewScreen';
 
 const FlowStepper = ({ currentStep }) => {
-  const steps = ["Orientation", "Clinical Details", "Audio Data", "Analysis"];
+  const steps = ["Profile", "Passive Voice", "Active Battery", "Consensus"];
+  
+  // Map App currentStep to Stepper index
+  const stepMap = { 1: 0, 3: 1, 6: 2, 8: 3, 4: 4 };
+  const activeIdx = stepMap[currentStep] ?? -1;
+
+  if (activeIdx === -1) return null;
+
   return (
-    <div className="flow-stepper">
+    <div className="flow-stepper" style={{ marginBottom: '40px', padding: '0 20px' }}>
       {steps.map((s, i) => (
         <React.Fragment key={i}>
-          <div className={`flow-step ${i + 1 <= currentStep ? 'done' : i + 1 === currentStep + 1 ? 'active' : ''}`}>
-            <div className="step-dot">{i + 1 < currentStep ? <CheckCircle2 size={12} /> : i + 1}</div>
-            <span>{s}</span>
+          <div className={`flow-step ${i < activeIdx ? 'done' : i === activeIdx ? 'active' : ''}`} style={{ flex: 1, textAlign: 'center' }}>
+            <div className="step-dot" style={{ margin: '0 auto 8px' }}>
+               {i < activeIdx ? <CheckCircle2 size={12} /> : i + 1}
+            </div>
+            <span style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{s}</span>
           </div>
-          {i < steps.length - 1 && <div style={{ width: '40px', height: '1.5px', background: 'var(--border-light)' }} />}
+          {i < steps.length - 1 && <div style={{ height: '2px', flex: 0.5, background: 'var(--border-light)', marginTop: '12px' }} />}
         </React.Fragment>
       ))}
     </div>
@@ -38,7 +48,7 @@ const FlowStepper = ({ currentStep }) => {
 };
 
 function App() {
-  const [currentStep, setCurrentStep] = useState(0); // 0:Home 1:Profile 2:Tasks 3:Audio 4:Result 5:ActiveAssess 6:ACE3 7:MoCA
+  const [currentStep, setCurrentStep] = useState(0); // 0:Home 1:Profile 2:Tasks 3:Audio 4:Result 5:ActiveAssess 6:ActiveBattery 8:Consensus
   const [selectedTest, setSelectedTest] = useState('voice'); // which test was chosen in the hub
   const [file, setFile] = useState(null);
   const [age, setAge] = useState(65.0);
@@ -47,6 +57,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState(null); 
   const [activeResults, setActiveResults] = useState(null); 
+  const [multiActiveResults, setMultiActiveResults] = useState({}); // New: Store multiple batteries
   const [error, setError] = useState("");
   const [history, setHistory] = useState([]);
   const [isRecording, setIsRecording] = useState(false);
@@ -149,11 +160,13 @@ function App() {
         setResults(data); 
         setSteps(s => s.map(x => ({ ...x, status: 'done' })));
 
-        if (data.trigger_active_test) {
-          setCurrentStep(5); 
+        // If Active Battery already done, go ahead and auto-finalize.
+        if (multiActiveResults.ace3) {
+          handleFinalConsensus(null, data);
         } else {
-          setCurrentStep(4); 
+          setCurrentStep(6); 
         }
+        
         fetchHistory(); 
       } else {
         setError(res.data.message);
@@ -164,21 +177,38 @@ function App() {
     setIsLoading(false); 
   };
 
-  const handleActiveComplete = async (activeData, testType = 'cogni') => {
-    setActiveResults(activeData);
+  const handleActiveComplete = (activeData, testType = 'ace3') => {
+    const updatedMulti = { ...multiActiveResults, [testType]: activeData };
+    setMultiActiveResults(updatedMulti);
+
+    // If both are ready, just go ahead and finalize. Otherwise go to Consensus Review (8)
+    if (results) {
+      handleFinalConsensus(updatedMulti);
+    } else {
+      setCurrentStep(8);
+    }
+  };
+
+  const handleFinalConsensus = async (latestMulti = null, latestPassive = null) => {
+    setIsLoading(true);
+    const activeToUse = latestMulti || multiActiveResults;
+    const passiveToUse = latestPassive || results;
+    
     try {
       const res = await axios.post("http://localhost:8000/active_test/finalize", {
-        passive_data: results,
-        active_results: activeData,
-        test_type: testType
+        passive_data: passiveToUse,
+        active_batteries: activeToUse
       });
       if (res.data.status === 'success') {
-        setResults(res.data.data); // Update with fused data
+        const finalData = res.data.data;
+        setResults(finalData); 
+        setActiveResults(activeToUse);
+        setCurrentStep(4); // Show Result
       }
     } catch (err) {
-      console.error(`Final synthesis for ${testType} failed:`, err);
+      console.error(`Final synthesis failed:`, err);
     }
-    setCurrentStep(4); // Show Results
+    setIsLoading(false);
   };
 
   const handleBack = () => setCurrentStep(prev => Math.max(0, prev - 1));
@@ -187,14 +217,12 @@ function App() {
   return (
     <div className="clinical-app">
       <nav className="navbar">
-        <div className="brand" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="brand" onClick={() => setCurrentStep(0)} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
           <Brain size={28} color="var(--primary)" />
           <span style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--primary)', letterSpacing: '-0.03em' }}>Cogni<span style={{ color: 'var(--primary-light)' }}>Sense</span></span>
         </div>
         <div className="nav-links">
           <a className={currentStep === 0 ? 'active' : ''} onClick={() => setCurrentStep(0)}>Home</a>
-          <a className={currentStep > 0 && currentStep < 4 ? 'active' : ''} onClick={() => setCurrentStep(1)}>Assessment</a>
-          <a onClick={() => setCurrentStep(2)}>Test Hub</a>
         </div>
         <div className="nav-actions">
           <button className="btn-primary" onClick={() => setCurrentStep(1)}>
@@ -230,7 +258,6 @@ function App() {
                    setSelectedTest(testId);
                    if (testId === 'voice') setCurrentStep(3);
                    else if (testId === 'ace3') setCurrentStep(6);
-                   else if (testId === 'moca') setCurrentStep(7);
                  }}
                  onBack={handleBack}
                />
@@ -264,27 +291,36 @@ function App() {
           </div>
         )}
 
-        {/* ACE-III Assessment */}
+        {/* Active Clinical Battery */}
         {currentStep === 6 && (
           <div className="container" style={{ maxWidth: '1000px' }}>
+             <FlowStepper currentStep={currentStep} />
             <GenericAssessment
               testType="ace3"
-              title="ACE-III Assessment"
+              title="Active Clinical Battery"
               onBack={() => setCurrentStep(2)}
               onComplete={(data) => handleActiveComplete(data, 'ace3')}
             />
           </div>
         )}
 
-        {/* MoCA Assessment */}
-        {currentStep === 7 && (
-          <div className="container" style={{ maxWidth: '1000px' }}>
-            <GenericAssessment
-              testType="moca"
-              title="MoCA Assessment"
-              onBack={() => setCurrentStep(2)}
-              onComplete={(data) => handleActiveComplete(data, 'moca')}
-            />
+        {/* Final Consensus Review - USER REQUEST: "Interactive panels and aggregated results" */}
+        {currentStep === 8 && (
+          <div className="container" style={{ maxWidth: '800px' }}>
+             <FlowStepper currentStep={currentStep} />
+             <ConsensusReviewScreen 
+                passiveReady={!!results}
+                activeReady={!!multiActiveResults.ace3}
+                passiveData={results}
+                activeData={multiActiveResults.ace3}
+                onFinalize={handleFinalConsensus}
+                onNavigate={(dest) => {
+                  if (dest === 'passive') setCurrentStep(3);
+                  else if (dest === 'active') setCurrentStep(6);
+                }}
+                isLoading={isLoading}
+                error={error}
+             />
           </div>
         )}
       </main>

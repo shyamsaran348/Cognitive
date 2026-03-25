@@ -1,5 +1,6 @@
 import React from 'react';
-import { Upload, CheckCircle2, Activity, Play, Loader2, Mic } from 'lucide-react';
+import { Upload, CheckCircle2, Activity, Play, Loader2, Mic, ImageIcon, Info } from 'lucide-react';
+import cookieTheft from '../assets/cookie_theft.jpeg';
 
 const IngestionPanel = ({ 
   file, handleFileChange, isRecording, startRecording, stopRecording, 
@@ -14,6 +15,33 @@ const IngestionPanel = ({
           <div className="badge-green"><Activity size={14} /> Stage 3: Audio Ingestion</div>
           <h3 style={{ margin: '8px 0 4px' }}>Speech Biomarker Capture</h3>
           <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>Upload or record patient voice for Trimodal analysis.</p>
+        </div>
+      </div>
+
+      <div style={{ padding: '24px', background: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0', marginBottom: '32px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+          <ImageIcon size={18} color="var(--primary)" />
+          <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1e293b' }}>Standard Clinical Elicitation (Cookie Theft)</span>
+        </div>
+        <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
+          <div style={{ flex: '0 0 240px', height: '180px', background: '#f1f5f9', borderRadius: '12px', overflow: 'hidden', border: '1px solid #cbd5e1' }}>
+            <img 
+              src={cookieTheft} 
+              alt="Cookie Theft Clinical Task" 
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+              onError={(e) => { e.target.style.display='none'; e.target.parentNode.innerHTML='<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:0.7rem">Image asset missing</div>'; }}
+            />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ background: 'var(--primary-light)', color: 'white', padding: '16px', borderRadius: '12px', fontSize: '0.95rem', lineHeight: '1.5', fontWeight: 500, position: 'relative' }}>
+              "Please describe everything you see happening in this picture. Take your time to include all details."
+              <div style={{ position: 'absolute', left: '-8px', top: '20px', width: 0, height: 0, borderTop: '8px solid transparent', borderBottom: '8px solid transparent', borderRight: '8px solid var(--primary-light)' }} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', color: '#64748b', fontSize: '0.75rem' }}>
+              <Info size={14} /> 
+              Expected response: ~2-3 minutes of spontaneous speech.
+            </div>
+          </div>
         </div>
       </div>
 

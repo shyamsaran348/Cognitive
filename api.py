@@ -1,5 +1,6 @@
 import os
 import sys
+import asyncio
 
 # MUST INJECT THREAD PROTECTIONS BEFORE FASTAPI OR TORCH LOAD
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -138,22 +139,35 @@ def calculate_reliability(age, education, cdr, audio_meta=None):
 # Active Assessment Orchestrator
 from test_engine import test_engine
 ACTIVE_RESULTS = {} # Session memory for domain scores
+SCORING_LOCK = asyncio.Lock() # Prevent OOM by serializing heavy Whisper tasks
 
 @app.post("/active_test/score")
 async def active_test_score(
-    audio: UploadFile = File(...),
     task_key: str = Form(...),
     test_type: str = Form("cogni"),
-    session_id: str = Form("default")
+    session_id: str = Form("default"),
+    audio: UploadFile = File(None),
+    text_response: str = Form(None)
 ):
-    """Processes a single active assessment task. Supports cogni / ace3 / moca test types."""
-    temp_path = f"/tmp/active_{task_key}_{os.getpid()}.wav"
+    """Processes a single active assessment task (Supports Voice or Text)."""
+    temp_path = None
     try:
-        audio_bytes = await audio.read()
-        with open(temp_path, "wb") as f:
-            f.write(audio_bytes)
+        if audio:
+            temp_path = f"/tmp/active_{task_key}_{os.getpid()}.wav"
+            audio_bytes = await audio.read()
+            with open(temp_path, "wb") as f:
+                f.write(audio_bytes)
             
-        score, transcript, metadata = test_engine.score_response(task_key, temp_path, test_type=test_type)
+        # Offload the blocking CPU-heavy scoring task to a thread pool
+        # Wrap in SCORING_LOCK to prevent memory exhaustion (Whisper OOM)
+        async with SCORING_LOCK:
+            score, transcript, metadata = await asyncio.to_thread(
+                test_engine.score_response,
+                task_key, 
+                audio_path=temp_path, 
+                test_type=test_type, 
+                text_response=text_response
+            )
         
         if session_id not in ACTIVE_RESULTS: ACTIVE_RESULTS[session_id] = {}
         ACTIVE_RESULTS[session_id][task_key] = {
@@ -181,111 +195,107 @@ async def active_test_finalize(
     payload: dict = Body(...)
 ):
     """
-    True Bayesian Fusion: Confidence-Aware Synthesis of Passive + Active signals.
-    V3: Normalized confidence, adaptive agreement thresholds, failure detection, clinical narratives.
+    N-Way Bayesian Fusion: Multi-modality synthesis of Passive + Multiple Active batteries.
+    Specifically: Passive Voice (PoE) + ACE-III + MoCA.
     """
-    passive_data = payload.get("passive_data", {})
-    active_results = payload.get("active_results", {})
-    test_type = payload.get("test_type", "cogni")
+    passive_data     = payload.get("passive_data", {})
+    active_batteries = payload.get("active_batteries", {}) # e.g. {"ace3": results, "moca": results}
     
-    if not passive_data or not active_results:
+    # Fallback for old single-active_results format
+    if not active_batteries and "active_results" in payload:
+        active_batteries = {payload.get("test_type", "cogni"): payload["active_results"]}
+    
+    if not passive_data or not active_batteries:
         return {"status": "error", "message": "Incomplete data for synthesis."}
-        
-    # ─── 1. Compute Active Index AND Composite Active Confidence ──────────────
-    active_index, active_confidence = test_engine.calculate_active_index(active_results, test_type=test_type)
+          
+    # ─── 1. Modal Indices & Confidences ───────────────────────────────────────
+    modalities = []
+    
+    # A. Passive Voice Modality (from PoE Model)
     passive_mmse = passive_data.get("mmse_score", 30.0)
-    
-    # ─── 2. Normalize Passive Confidence (Stable Version) ────────────────────
-    # 1/sigma can explode. Clip to [0, 10] and normalize to [0.0, 1.0]
     passive_variance = passive_data.get("variance", 0.5)
-    raw_conf = float(np.clip(1.0 / (passive_variance + 1e-6), 0, 10))
-    passive_confidence = round(float(np.clip(raw_conf / 10.0, 0.05, 0.98)), 3)
+    raw_p_conf = float(np.clip(1.0 / (passive_variance + 1e-6), 0, 10))
+    p_conf = round(float(np.clip(raw_p_conf / 10.0, 0.05, 0.98)), 3)
+    modalities.append({"id": "passive", "label": "Passive Voice", "mmse": passive_mmse, "conf": p_conf})
     
-    # ─── 3. Dynamic Confidence-Derived Fusion Weights ────────────────────────
-    total_conf = passive_confidence + active_confidence
-    w_passive = passive_confidence / total_conf
-    w_active  = active_confidence  / total_conf
+    # B. Active Batteries Modalities (Voice-driven Tests)
+    all_failure_flags = []
+    all_narratives = []
     
-    fused_mmse = round((w_passive * passive_mmse) + (w_active * active_index), 1)
-    fused_mmse = float(np.clip(fused_mmse, 0.0, 30.0))
-    fused_confidence = round(float(np.clip(w_passive * passive_confidence + w_active * active_confidence, 0.0, 0.98)), 3)
+    for b_type, b_results in active_batteries.items():
+        idx, conf = test_engine.calculate_active_index(b_results, test_type=b_type)
+        label = "ACE-III" if b_type == "ace3" else "MoCA" if b_type == "moca" else "CogniSense"
+        modalities.append({"id": b_type, "label": label, "mmse": idx, "conf": conf})
+        
+        # Collect flags and domain-specific narratives
+        all_failure_flags.extend(test_engine.detect_failure_modes(b_results))
+        all_narratives.extend(test_engine.generate_clinical_narrative(b_results))
 
-    # ─── 4. Adaptive Agreement Thresholds (Normalized by MMSE Range) ─────────
-    agreement_gap = abs(passive_mmse - active_index)
-    gap_ratio = agreement_gap / 30.0  # Normalize to MMSE scale
+    # ─── 2. Weighted Bayesian Fusion ──────────────────────────────────────────
+    total_conf = sum(m["conf"] for m in modalities)
+    fused_mmse = 0.0
+    modality_breakdown = {}
     
-    if gap_ratio < 0.07:   # < 2.1 MMSE points
-        agreement = "High"
-        agreement_icon = "✅"
-        agreement_detail = "Passive voice biomarkers and active domain probes strongly corroborate each other. Diagnostic conclusion is high-confidence."
-    elif gap_ratio < 0.15:  # < 4.5 MMSE points
-        agreement = "Moderate"
-        agreement_icon = "⚠️"
-        if active_index > passive_mmse:
-            agreement_detail = "Moderate divergence detected. Passive biomarkers flag higher risk than active performance. May indicate early compensatory reserve — monitor closely."
-        else:
-            agreement_detail = "Moderate divergence detected. Active testing reveals deficits not fully captured by passive voice biomarkers. Recommend domain-specific follow-up."
-    else:                   # >= 4.5 MMSE points
-        agreement = "Low"
-        agreement_icon = "🚨"
-        if active_index > passive_mmse:
-            agreement_detail = "Significant divergence. Passive speech flagged high risk, but active performance was near-normal. Verify audio quality and consider re-assessment."
-        else:
-            agreement_detail = "Significant divergence. Active probing revealed profound multi-domain deficits beyond what passive biomarkers predicted. High-priority clinical referral recommended."
+    for m in modalities:
+        weight = m["conf"] / total_conf
+        fused_mmse += m["mmse"] * weight
+        modality_breakdown[m["id"]] = {
+            "label": m["label"],
+            "score": round(m["mmse"], 1),
+            "confidence": round(m["conf"], 2),
+            "contribution": f"{round(weight * 100, 1)}%"
+        }
+    
+    fused_mmse = round(float(np.clip(fused_mmse, 0.0, 30.0)), 1)
+    # Fused confidence (weighted avg)
+    fused_conf = round(float(np.clip(sum(m["conf"] * (m["conf"]/total_conf) for m in modalities), 0.05, 0.98)), 3)
 
-    # ─── 5. Failure Mode Detection ────────────────────────────────────────────
-    failure_flags = test_engine.detect_failure_modes(active_results)
-    assessment_quality = "Compromised" if any(f["severity"] == "critical" for f in failure_flags) else \
-                         "Reduced"     if any(f["severity"] == "warning"  for f in failure_flags) else \
+    # ─── 3. Multi-modal Agreement ─────────────────────────────────────────────
+    # Compare Passive vs Aggregate Active
+    active_modes = [m for m in modalities if m["id"] != "passive"]
+    avg_active = sum(m["mmse"] for m in active_modes) / len(active_modes) if active_modes else passive_mmse
+    agreement_gap = abs(passive_mmse - avg_active)
+    gap_ratio = agreement_gap / 30.0
+    
+    if gap_ratio < 0.07:   agreement, icon, det = "High", "✅", "Strong corroboration across all modalities."
+    elif gap_ratio < 0.15: agreement, icon, det = "Moderate", "⚠️", "Partial divergence between passive biomarkers and active probes."
+    else:                  agreement, icon, det = "Low", "🚨", "Significant cross-modal discrepancy — clinical review required."
+
+    # ─── 4. Clinical Tiering (AD vs HC) ───────────────────────────────────────
+    if fused_mmse >= 26: 
+        tier, diagnosis = "Healthy Control (HC)", "Normal Cognition"
+    elif fused_mmse >= 19: 
+        tier, diagnosis = "Possible AD (MCI)", "Mild Cognitive Impairment"
+    else:                  
+        tier, diagnosis = "Probable AD (Dementia)", "Moderate-to-Severe Impairment"
+
+    # ─── 5. Failure Mode Summary ──────────────────────────────────────────────
+    assessment_quality = "Compromised" if any(f["severity"] == "critical" for f in all_failure_flags) else \
+                         "Reduced"     if any(f["severity"] == "warning"  for f in all_failure_flags) else \
                          "Acceptable"
 
-    # ─── 6. Clinical Narrative Generator ─────────────────────────────────────
-    clinical_narrative = test_engine.generate_clinical_narrative(active_results)
+    # ─── 6. Final Response Assembly ───────────────────────────────────────────
+    final_narrative = "\n\n".join(all_narratives) if all_narratives else "Assessment complete."
+    
+    # Rationale for Clinical Explainability
+    rationale = f"{icon} {agreement} Agreement. Integrated Score: {fused_mmse:.1f}/30. {det}"
 
-    # ─── 7. Modality Contribution & Tier ─────────────────────────────────────
-    passive_contrib_pct = round(w_passive * 100, 1)
-    active_contrib_pct  = round(w_active  * 100, 1)
-    modality_contributions = {
-        "passive_voice_biomarkers": f"{passive_contrib_pct}%",
-        "active_cognitive_probes":  f"{active_contrib_pct}%",
-        "w_passive": w_passive,
-        "w_active":  w_active
-    }
-
-    if fused_mmse >= 27: tier, diagnosis = "Normal",       "Healthy Control"
-    elif fused_mmse >= 21: tier, diagnosis = "Mild Concern", "MCI (Mild Cognitive Impairment)"
-    else:                  tier, diagnosis = "High Risk",    "Alzheimer's Disease (Probable)"
-
-    quality_note = f" ⚠️ Assessment quality: {assessment_quality}." if assessment_quality != "Acceptable" else ""
-    rationale = (f"{agreement_icon} Adaptive Consensus: {agreement} signal agreement. "
-                 f"Passive: {passive_contrib_pct}% (σ-conf={passive_confidence:.2f}), "
-                 f"Active: {active_contrib_pct}% (comp-conf={active_confidence:.2f}). "
-                 f"{agreement_detail}{quality_note}")
-
-    integrated_data = {
-        **passive_data,
+    result_data = {
         "mmse_score": fused_mmse,
-        "mmse_passive": passive_mmse,
-        "mmse_active": active_index,
-        "tier": tier,
-        "diagnosis": diagnosis,
-        "confidence": fused_confidence,
-        "rationale": rationale,
-        "is_integrated": True,
-        "mmse_diff": agreement_gap,
-        "agreement": agreement,
-        "agreement_icon": agreement_icon,
-        "agreement_detail": agreement_detail,
-        "modality_contributions": modality_contributions,
-        "active_confidence": active_confidence,
-        "passive_confidence": passive_confidence,
-        "clinical_narrative": clinical_narrative,
-        "failure_flags": failure_flags,
-        "assessment_quality": assessment_quality
+        "risk_level": tier,
+        "diagnosis":  diagnosis,
+        "confidence": fused_conf,
+        "agreement":  agreement,
+        "agreement_icon": icon,
+        "agreement_detail": rationale,
+        "clinical_narrative": final_narrative,
+        "modality_breakdown": modality_breakdown,
+        "failure_modes": all_failure_flags,
+        "assessment_quality": assessment_quality,
+        "is_fused": True
     }
     
-    log_prediction(integrated_data)
-    return {"status": "success", "data": integrated_data}
+    return {"status": "success", "data": result_data}
 
 @app.post("/predict")
 async def predict(

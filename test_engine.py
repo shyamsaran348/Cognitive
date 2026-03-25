@@ -164,21 +164,26 @@ class ActiveTestEngine:
             "type": "attention",
             "keywords": ["99", "98", "97", "96", "95", "94", "93", "92", "91"],
             "points": 9,
-            "domain_label": "ACE-III – Attention: Counting"
+            "domain_label": "Clinical Battery – Attention: Counting",
+            "input_mode": "voice"
         },
         "ace3_attention_serial": {
             "prompt": "Subtract 7 from 100, then keep subtracting 7. Give me five answers.",
             "type": "attention",
             "keywords": ["93", "86", "79", "72", "65"],
             "points": 5,
-            "domain_label": "ACE-III – Attention: Serial 7s"
+            "domain_label": "Clinical Battery – Attention: Serial 7s",
+            "input_mode": "voice"
         },
         "ace3_memory_registration": {
             "prompt": "I will say three words. Please repeat them: Lemon, Key, Ball.",
             "type": "memory",
             "keywords": ["lemon", "key", "ball"],
             "points": 3,
-            "domain_label": "ACE-III – Memory: Registration"
+            "domain_label": "Clinical Battery – Memory: Registration",
+            "input_mode": "voice",
+            "should_speak": True,
+            "hide_text": True
         },
         "ace3_fluency_letters": {
             "prompt": "Say as many words as you can beginning with the letter P. You have 60 seconds.",
@@ -186,7 +191,8 @@ class ActiveTestEngine:
             "keywords": ["pen", "paper", "pink", "park", "pet", "path", "plan", "plug",
                          "pay", "pace", "pole", "pool", "pot", "port", "part", "palm", "past", "pill"],
             "points": 14,
-            "domain_label": "ACE-III – Fluency: Letter P"
+            "domain_label": "Clinical Battery – Fluency: Letter P",
+            "input_mode": "voice"
         },
         "ace3_fluency_animals": {
             "prompt": "Now name as many animals as you can. You have 60 seconds.",
@@ -195,14 +201,18 @@ class ActiveTestEngine:
                          "fish", "snake", "rabbit", "bear", "wolf", "fox", "elephant", "monkey",
                          "frog", "turtle", "deer", "whale", "eagle"],
             "points": 22,
-            "domain_label": "ACE-III – Fluency: Animals"
+            "domain_label": "Clinical Battery – Fluency: Animals",
+            "input_mode": "voice"
         },
         "ace3_language_repeat": {
             "prompt": "Repeat after me: 'The cat always hid beneath the garden table.'",
             "type": "language",
             "keywords": ["cat", "hid", "beneath", "garden", "table"],
             "points": 5,
-            "domain_label": "ACE-III – Language: Repetition"
+            "domain_label": "Clinical Battery – Language: Repetition",
+            "input_mode": "voice",
+            "should_speak": True,
+            "hide_text": True
         },
         "ace3_language_naming": {
             "prompt": ("I will describe something — tell me what it is. "
@@ -212,7 +222,8 @@ class ActiveTestEngine:
             "type": "language",
             "keywords": ["blackboard", "board", "key", "knife"],
             "points": 4,
-            "domain_label": "ACE-III – Language: Naming"
+            "domain_label": "Clinical Battery – Language: Naming",
+            "input_mode": "text"
         },
         "ace3_visuospatial": {
             "prompt": ("Describe the clock on a typical analogue clock face — what numbers are at "
@@ -220,21 +231,66 @@ class ActiveTestEngine:
             "type": "visuospatial",
             "keywords": ["twelve", "twelve", "three", "six", "nine", "top", "bottom"],
             "points": 5,
-            "domain_label": "ACE-III – Visuospatial: Clock Face"
+            "domain_label": "Clinical Battery – Visuospatial: Clock Face",
+            "input_mode": "text"
         },
         "ace3_memory_recall": {
             "prompt": "Do you remember the three words I asked you to repeat earlier? Please say them.",
             "type": "recall",
             "keywords": ["lemon", "key", "ball"],
             "points": 3,
-            "domain_label": "ACE-III – Memory: Delayed Recall"
+            "domain_label": "Clinical Battery – Memory: Delayed Recall",
+            "input_mode": "text"
         },
         "ace3_orientation": {
             "prompt": "What year is it? What month? What day of the week? And what city are you in?",
             "type": "orientation",
             "keywords": ["2026", "march", "tuesday", "india"],
             "points": 4,
-            "domain_label": "ACE-III – Orientation"
+            "domain_label": "Clinical Battery – Orientation",
+            "input_mode": "text"
+        },
+        "ace3_trail_making": {
+            "prompt": "Connect the numbers and letters in alternating order: 1-A, 2-B, 3-C, 4-D, 5-E.",
+            "type": "executive",
+            "keywords": ["success"],
+            "points": 1,
+            "domain_label": "Clinical Battery – Executive: Trail Making B",
+            "input_mode": "visual"
+        },
+        "ace3_digit_span_back": {
+            "prompt": "Repeat these numbers in REVERSE order: 7 — 4 — 2.",
+            "type": "attention",
+            "keywords": ["2", "4", "7"],
+            "points": 1,
+            "domain_label": "Clinical Battery – Attention: Digits Backward",
+            "input_mode": "text"
+        },
+        "ace3_abstraction_sim1": {
+            "prompt": "In what way are an ORANGE and a BANANA similar?",
+            "type": "executive",
+            "keywords": ["fruit", "food", "eat", "peel", "healthy"],
+            "points": 1,
+            "domain_label": "Clinical Battery – Executive: Abstraction 1",
+            "input_mode": "text"
+        },
+        "ace3_abstraction_sim2": {
+            "prompt": "In what way are a TRAIN and a BICYCLE similar?",
+            "type": "executive",
+            "keywords": ["vehicle", "transport", "travel", "ride", "wheels", "move"],
+            "points": 1,
+            "domain_label": "Clinical Battery – Executive: Abstraction 2",
+            "input_mode": "text"
+        },
+        "ace3_language_repeat_complex": {
+            "prompt": "Repeat after me: 'I only know that John is the one to help today.'",
+            "type": "language",
+            "keywords": ["john", "one", "help", "today"],
+            "points": 1,
+            "domain_label": "Clinical Battery – Language: Complex Repetition",
+            "input_mode": "voice",
+            "should_speak": True,
+            "hide_text": True
         },
     }
 
@@ -337,15 +393,13 @@ class ActiveTestEngine:
 
     def get_tasks_for_type(self, test_type: str) -> dict:
         """Returns the task registry for the given test type."""
-        if test_type == "ace3":
+        if test_type in ("ace3", "active", "battery"):
             return self.ACE3_TASKS
-        elif test_type == "moca":
-            return self.MOCA_TASKS
         return self.TASKS  # default: CogniSense battery
 
-    def score_response(self, task_key, audio_path, test_type: str = "cogni"):
+    def score_response(self, task_key, audio_path=None, test_type: str = "cogni", text_response: str = None):
         """
-        Transcribes the response and calculates a domain score with rich metadata.
+        Transcribes the response (or uses text input) and calculates a domain score with rich metadata.
         Returns: (score, transcript, metadata_dict)
         """
         task_registry = self.get_tasks_for_type(test_type)
@@ -358,14 +412,20 @@ class ActiveTestEngine:
         task = task_registry[task_key]
         t_start = time.time()
 
-        # 1. Transcribe with Whisper ─────────────────────────────────────────────
-        print(f"[TEST_ENGINE] Transcribing response for task: {task_key}")
-        try:
-            _, transcript = extractor.extract_whisper(audio_path, transcribe=True)
-            transcript = transcript.lower().strip()
-        except Exception as e:
-            print(f"[ERROR] ASR Failed: {e}")
-            return 0, "ASR Error", {"latency": 0, "confidence": 0.0, "asr_error": True}
+        # 1. Obtain Transcript ───────────────────────────────────────────────────
+        if text_response:
+            print(f"[TEST_ENGINE] Using direct text response for task: {task_key}")
+            transcript = text_response.lower().strip()
+        elif audio_path:
+            print(f"[TEST_ENGINE] Transcribing response for task: {task_key}")
+            try:
+                _, transcript = extractor.extract_whisper(audio_path, transcribe=True)
+                transcript = transcript.lower().strip()
+            except Exception as e:
+                print(f"[ERROR] ASR Failed: {e}")
+                return 0, "ASR Error", {"latency": 0, "confidence": 0.0, "asr_error": True}
+        else:
+            return 0, "No input provided", {}
 
         latency = round(time.time() - t_start, 2)
         domain_type  = task.get("type", "generic")
@@ -551,6 +611,9 @@ class ActiveTestEngine:
                 "prompt": task_registry[key]["prompt"],
                 "points": task_registry[key]["points"],
                 "domain_label": task_registry[key].get("domain_label", key),
+                "input_mode": task_registry[key].get("input_mode", "voice"),
+                "should_speak": task_registry[key].get("should_speak", False),
+                "hide_text": task_registry[key].get("hide_text", False),
                 "index": current_task_index,
                 "total": len(keys)
             }
